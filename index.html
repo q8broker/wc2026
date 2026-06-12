@@ -9,12 +9,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="WC 2026">
 <meta name="theme-color" content="#020b1c">
-<link rel="manifest" href="manifest.json?v=20260612-v17">
+<link rel="manifest" href="manifest.json?v=20260612-v18">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
 if("serviceWorker" in navigator){
   window.addEventListener("load",function(){
-    navigator.serviceWorker.register("sw.js?v=20260612-v17").then(function(reg){
+    navigator.serviceWorker.register("sw.js?v=20260612-v18").then(function(reg){
       if(reg&&reg.update) reg.update();
     }).catch(function(){});
   });
@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v17-20260612";
+const APP_VERSION = "v18-20260612";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -866,6 +866,7 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
     {id:"match", ic:"📅",lb:"المباريات"},
     {id:"knock", ic:"⚡",lb:"الإقصائيات"},
     {id:"board", ic:"🏆",lb:"الترتيب"},
+    {id:"me",    ic:"👤",lb:"حسابي"},
   ];
   if(profile.is_admin) TABS.push({id:"admin",ic:"⚙️",lb:"الإدارة"});
 
@@ -909,6 +910,7 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
         {tab==="match" && <MatchesTab matches={matches} myPreds={myPreds} savePred={savePred} matchFlt={matchFlt} setMatchFlt={setMatchFlt} teamFilter={teamMatchFilter} setTeamFilter={setTeamMatchFilter} liveMap={liveMap} onOpen={setPopup}/>}
         {tab==="knock" && <KnockTab matches={matches.filter(function(m){return m.stage&&m.stage!=="group";})} allMatches={matches} teams={teams} myPreds={myPreds} liveMap={liveMap} onOpen={setPopup}/>}
         {tab==="board" && <BoardTab leaderboard={leaderboard} profile={profile} allPreds={allPreds} matches={matches}/>}
+        {tab==="me"    && <ProfileTab profile={profile} setProfile={setProfile} myPts={myPts} predCount={Object.keys(myPreds).length} favCount={favs.size} myChamp={myChamp} teams={teams}/>}
         {tab==="admin" && <AdminTab pending={pending} matches={matches} teams={teams} approveUser={approveUser} setResult={setResult} champWin={champWin} setChampWinner={setChampWinner} syncAPI={syncAPI} pullResults={pullResults} applyResults={applyResults} appSettings={appSettings} toggleSetting={toggleSetting} members={profiles}/>}
       </main>
 
@@ -1671,6 +1673,99 @@ function BoardTab({leaderboard,profile,allPreds,matches}) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ═══════════════ PROFILE TAB ══════════════════════════════════ */
+function ProfileTab({profile,setProfile,myPts,predCount,favCount,myChamp,teams}) {
+  const [name,setName] = useState(profile.display_name||"");
+  const [nameMsg,setNameMsg] = useState("");
+  const [nameBusy,setNameBusy] = useState(false);
+  const [pw1,setPw1] = useState("");
+  const [pw2,setPw2] = useState("");
+  const [pwMsg,setPwMsg] = useState("");
+  const [pwBusy,setPwBusy] = useState(false);
+  const [email,setEmail] = useState("");
+
+  useEffect(function(){
+    sb.auth.getUser().then(function(r){ if(r.data&&r.data.user) setEmail(r.data.user.email||""); }).catch(function(){});
+  },[]);
+
+  const saveName = async function(){
+    setNameMsg("");
+    const v=name.trim();
+    if(v.length<2){ setNameMsg("❌ الاسم قصير جداً"); return; }
+    setNameBusy(true);
+    const res = await q(sb.from("profiles").update({display_name:v}).eq("id",profile.id).select().single());
+    setNameBusy(false);
+    if(res.data){ setProfile(res.data); setNameMsg("✅ تم تحديث الاسم"); }
+    else setNameMsg("❌ تعذر الحفظ، حاول مرة ثانية");
+    setTimeout(function(){setNameMsg("");},3000);
+  };
+
+  const savePw = async function(){
+    setPwMsg("");
+    if(pw1.length<6){ setPwMsg("❌ كلمة المرور 6 أحرف على الأقل"); return; }
+    if(pw1!==pw2){ setPwMsg("❌ الكلمتان غير متطابقتين"); return; }
+    setPwBusy(true);
+    try {
+      const {error} = await sb.auth.updateUser({password:pw1});
+      if(error) throw error;
+      setPwMsg("✅ تم تغيير كلمة المرور");
+      setPw1(""); setPw2("");
+    } catch(e){ setPwMsg("❌ "+String(e.message||e)); }
+    setPwBusy(false);
+    setTimeout(function(){setPwMsg("");},4000);
+  };
+
+  const champTeam = myChamp && teams ? teams[myChamp.team_id] : null;
+
+  return (
+    <div>
+      <div style={{textAlign:"center",marginBottom:16}}>
+        <div style={{width:72,height:72,margin:"0 auto 8px",borderRadius:"50%",background:C.goldBg,border:"2px solid "+C.goldBdr,display:"flex",alignItems:"center",justifyContent:"center",fontSize:34}}>👤</div>
+        <div style={{fontSize:18,fontWeight:900}}>{profile.display_name}</div>
+        <div style={{fontSize:12.5,color:C.sub}}>@{profile.username}{profile.is_admin&&<span style={{color:C.gold}}> · مشرف</span>}</div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
+        {[["🏅",myPts,"نقاطي"],["📝",predCount,"توقعاتي"],["⭐",favCount,"مفضّلتي"]].map(function(x){return (
+          <div key={x[2]} style={{background:C.card,border:"1px solid "+C.border,borderRadius:14,padding:"12px 0",textAlign:"center"}}>
+            <div style={{fontSize:18}}>{x[0]}</div>
+            <div style={{fontSize:22,fontWeight:900}}>{x[1]}</div>
+            <div style={{fontSize:11.5,color:C.sub,marginTop:2}}>{x[2]}</div>
+          </div>
+        );})}
+      </div>
+
+      <div style={{fontSize:14,fontWeight:700,color:C.gold,marginBottom:10}}>📋 بياناتي</div>
+      <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:14,padding:"4px 14px",marginBottom:16}}>
+        {[["البريد الإلكتروني",email||"…"],["الاسم المستعار","@"+profile.username],["توقع البطل",champTeam?champTeam.name_ar:"لم تختر بعد"],["الحالة",profile.is_admin?"مشرف":"عضو"]].map(function(x){return (
+          <div key={x[0]} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid "+C.border,fontSize:13}}>
+            <span style={{color:C.sub}}>{x[0]}</span>
+            <span style={{fontWeight:700,direction:"ltr"}}>{x[1]}</span>
+          </div>
+        );})}
+      </div>
+
+      <div style={{fontSize:14,fontWeight:700,color:C.gold,marginBottom:10}}>✏️ تغيير الاسم</div>
+      <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:14,padding:12,marginBottom:16}}>
+        <div style={{display:"flex",gap:8}}>
+          <input value={name} onChange={function(e){setName(e.target.value);}} placeholder="الاسم الجديد"
+            style={{flex:1,padding:"10px 12px",background:"rgba(255,255,255,.06)",border:"1px solid "+C.border,borderRadius:10,color:C.text,fontSize:14,fontFamily:"inherit",outline:"none"}}/>
+          <Btn onClick={saveName} color="gold" disabled={nameBusy||name.trim()===profile.display_name}>{nameBusy?"...":"حفظ"}</Btn>
+        </div>
+        {nameMsg&&<div style={{marginTop:8,fontSize:12.5,textAlign:"center",color:nameMsg.indexOf("✅")>=0?C.green:C.red,fontWeight:700}}>{nameMsg}</div>}
+      </div>
+
+      <div style={{fontSize:14,fontWeight:700,color:C.gold,marginBottom:10}}>🔑 تغيير كلمة المرور</div>
+      <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:14,padding:12,marginBottom:16}}>
+        <Inp value={pw1} onChange={setPw1} placeholder="كلمة المرور الجديدة" type="password"/>
+        <Inp value={pw2} onChange={setPw2} placeholder="تأكيد كلمة المرور" type="password"/>
+        <Btn onClick={savePw} color="gold" disabled={pwBusy} full>{pwBusy?"...":"تغيير كلمة المرور"}</Btn>
+        {pwMsg&&<div style={{marginTop:8,fontSize:12.5,textAlign:"center",color:pwMsg.indexOf("✅")>=0?C.green:C.red,fontWeight:700}}>{pwMsg}</div>}
+      </div>
     </div>
   );
 }
