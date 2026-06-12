@@ -9,12 +9,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="WC 2026">
 <meta name="theme-color" content="#020b1c">
-<link rel="manifest" href="manifest.json?v=20260612-v18">
+<link rel="manifest" href="manifest.json?v=20260612-v19">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
 if("serviceWorker" in navigator){
   window.addEventListener("load",function(){
-    navigator.serviceWorker.register("sw.js?v=20260612-v18").then(function(reg){
+    navigator.serviceWorker.register("sw.js?v=20260612-v19").then(function(reg){
       if(reg&&reg.update) reg.update();
     }).catch(function(){});
   });
@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v18-20260612";
+const APP_VERSION = "v19-20260612";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -1625,8 +1625,8 @@ function BoardTab({leaderboard,profile,allPreds,matches}) {
               {i<3?medals[i]:"#"+(i+1)}
             </div>
             <div style={{flex:1}}>
-              <div style={{fontSize:14,fontWeight:700,color:me?C.gold:C.text}}>{u.display_name}{me&&<span style={{fontSize:11.5,color:C.gold,fontWeight:400}}> (أنا)</span>}</div>
-              <div style={{fontSize:11.5,color:C.sub}}>@{u.username} · {u.predCount} توقع</div>
+              <div style={{fontSize:14.5,fontWeight:900,color:me?C.gold:C.text}}>{u.username}{me&&<span style={{fontSize:11.5,color:C.gold,fontWeight:400}}> (أنا)</span>}</div>
+              <div style={{fontSize:11.5,color:C.sub}}>{u.display_name} · {u.predCount} توقع</div>
             </div>
             <div style={{textAlign:"left"}}>
               <div style={{fontSize:22,fontWeight:900,color:clr}}>{u.pts}</div>
@@ -1649,8 +1649,8 @@ function BoardTab({leaderboard,profile,allPreds,matches}) {
           <div onClick={function(e){e.stopPropagation();}} style={{background:"#071832",borderRadius:"22px 22px 0 0",width:"100%",maxHeight:"78vh",overflowY:"auto",padding:"16px"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <div>
-                <div style={{fontSize:15,fontWeight:900,color:sel.id===profile.id?C.gold:C.text}}>{sel.display_name}{sel.id===profile.id&&" (أنا)"}</div>
-                <div style={{fontSize:11.5,color:C.sub}}>@{sel.username} · مباريات منتهية فقط</div>
+                <div style={{fontSize:15,fontWeight:900,color:sel.id===profile.id?C.gold:C.text}}>{sel.username}{sel.id===profile.id&&" (أنا)"}</div>
+                <div style={{fontSize:11.5,color:C.sub}}>{sel.display_name} · مباريات منتهية فقط</div>
               </div>
               <button onClick={function(){setSel(null);}} style={{background:"rgba(255,255,255,.08)",border:"none",borderRadius:9,width:32,height:32,color:C.sub}}>x</button>
             </div>
@@ -1692,16 +1692,26 @@ function ProfileTab({profile,setProfile,myPts,predCount,favCount,myChamp,teams})
     sb.auth.getUser().then(function(r){ if(r.data&&r.data.user) setEmail(r.data.user.email||""); }).catch(function(){});
   },[]);
 
+  const [uname,setUname] = useState(profile.username||"");
   const saveName = async function(){
     setNameMsg("");
     const v=name.trim();
+    const uv=uname.trim().toLowerCase();
     if(v.length<2){ setNameMsg("❌ الاسم قصير جداً"); return; }
+    if(uv.length<3){ setNameMsg("❌ الاسم المستعار 3 أحرف على الأقل"); return; }
+    const patch={};
+    if(v!==profile.display_name) patch.display_name=v;
+    if(uv!==profile.username) patch.username=uv;
+    if(!Object.keys(patch).length){ setNameMsg("لا يوجد تغيير"); setTimeout(function(){setNameMsg("");},2000); return; }
     setNameBusy(true);
-    const res = await q(sb.from("profiles").update({display_name:v}).eq("id",profile.id).select().single());
+    const res = await q(sb.from("profiles").update(patch).eq("id",profile.id).select().single());
     setNameBusy(false);
-    if(res.data){ setProfile(res.data); setNameMsg("✅ تم تحديث الاسم"); }
-    else setNameMsg("❌ تعذر الحفظ، حاول مرة ثانية");
-    setTimeout(function(){setNameMsg("");},3000);
+    if(res.data){ setProfile(res.data); setUname(res.data.username||uv); setNameMsg("✅ تم الحفظ"); }
+    else {
+      const m=String((res.error&&res.error.message)||"").toLowerCase();
+      setNameMsg(m.indexOf("duplicate")>=0||m.indexOf("unique")>=0?"❌ الاسم المستعار محجوز لعضو آخر":"❌ تعذر الحفظ، حاول مرة ثانية");
+    }
+    setTimeout(function(){setNameMsg("");},3500);
   };
 
   const savePw = async function(){
@@ -1749,13 +1759,15 @@ function ProfileTab({profile,setProfile,myPts,predCount,favCount,myChamp,teams})
         );})}
       </div>
 
-      <div style={{fontSize:14,fontWeight:700,color:C.gold,marginBottom:10}}>✏️ تغيير الاسم</div>
+      <div style={{fontSize:14,fontWeight:700,color:C.gold,marginBottom:10}}>✏️ تغيير الاسم والاسم المستعار</div>
       <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:14,padding:12,marginBottom:16}}>
-        <div style={{display:"flex",gap:8}}>
-          <input value={name} onChange={function(e){setName(e.target.value);}} placeholder="الاسم الجديد"
-            style={{flex:1,padding:"10px 12px",background:"rgba(255,255,255,.06)",border:"1px solid "+C.border,borderRadius:10,color:C.text,fontSize:14,fontFamily:"inherit",outline:"none"}}/>
-          <Btn onClick={saveName} color="gold" disabled={nameBusy||name.trim()===profile.display_name}>{nameBusy?"...":"حفظ"}</Btn>
-        </div>
+        <div style={{fontSize:11.5,color:C.sub,marginBottom:4}}>الاسم الكامل</div>
+        <input value={name} onChange={function(e){setName(e.target.value);}} placeholder="الاسم الكامل"
+          style={{width:"100%",padding:"10px 12px",background:"rgba(255,255,255,.06)",border:"1px solid "+C.border,borderRadius:10,color:C.text,fontSize:14,fontFamily:"inherit",outline:"none",marginBottom:10}}/>
+        <div style={{fontSize:11.5,color:C.sub,marginBottom:4}}>الاسم المستعار (يظهر في الترتيب)</div>
+        <input value={uname} onChange={function(e){setUname(e.target.value);}} placeholder="username"
+          style={{width:"100%",padding:"10px 12px",background:"rgba(255,255,255,.06)",border:"1px solid "+C.border,borderRadius:10,color:C.text,fontSize:14,fontFamily:"inherit",outline:"none",marginBottom:10,direction:"ltr"}}/>
+        <Btn onClick={saveName} color="gold" disabled={nameBusy||(name.trim()===profile.display_name&&uname.trim().toLowerCase()===profile.username)} full>{nameBusy?"...":"حفظ"}</Btn>
         {nameMsg&&<div style={{marginTop:8,fontSize:12.5,textAlign:"center",color:nameMsg.indexOf("✅")>=0?C.green:C.red,fontWeight:700}}>{nameMsg}</div>}
       </div>
 
