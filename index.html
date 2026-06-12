@@ -9,12 +9,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="WC 2026">
 <meta name="theme-color" content="#020b1c">
-<link rel="manifest" href="manifest.json?v=20260612-v14">
+<link rel="manifest" href="manifest.json?v=20260612-v15">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
 if("serviceWorker" in navigator){
   window.addEventListener("load",function(){
-    navigator.serviceWorker.register("sw.js?v=20260612-v14").then(function(reg){
+    navigator.serviceWorker.register("sw.js?v=20260612-v15").then(function(reg){
       if(reg&&reg.update) reg.update();
     }).catch(function(){});
   });
@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v14-20260612";
+const APP_VERSION = "v15-20260612";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -518,7 +518,7 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
   const [appSettings,setAppSettings] = useState({});
   const [champLock, setChampLock]  = useState(new Date("2026-07-04T17:00:00Z"));
   const [popup,     setPopup]      = useState(null);
-  const [matchFlt,  setMatchFlt]   = useState("all");
+  const [matchFlt,  setMatchFlt]   = useState("upcoming");
   const [teamMatchFilter, setTeamMatchFilter] = useState(null);
   const [showInst,  setShowInst]   = useState(false);
   const [pwaReady,  setPwaReady]   = useState(false);
@@ -902,6 +902,15 @@ function HomeTab({profile,myPts,matches,myPreds,favs,myChamp,teams,champLock,liv
   const champTeam = myChamp ? teams[myChamp.team_id] : null;
   const isChampLocked = new Date()>=champLock;
 
+  /* المباراة القادمة في البطولة — ولو تعددت المباريات بنفس التوقيت تُعرض كلها */
+  const nextUp = useMemo(function(){
+    const upcoming=matches.filter(function(m){return !isPast(m.match_utc)&&m.status!=="finished";})
+      .sort(function(a,b){return new Date(a.match_utc)-new Date(b.match_utc);});
+    if(!upcoming.length) return [];
+    const first=new Date(upcoming[0].match_utc).getTime();
+    return upcoming.filter(function(m){return new Date(m.match_utc).getTime()===first;});
+  }, [matches]);
+
   return (
     <div>
       <div style={{textAlign:"center",marginBottom:8}}>
@@ -921,7 +930,7 @@ function HomeTab({profile,myPts,matches,myPreds,favs,myChamp,teams,champLock,liv
             );})}
           </div>
         )}
-        <div style={{fontSize:12.5,color:C.sub}}>المكسيك 🇲🇽 vs جنوب أفريقيا 🇿🇦 · <span style={{color:C.green,fontWeight:600}}>11 يونيو 2026</span></div>
+        {!cnt.done&&<div style={{fontSize:12.5,color:C.sub}}>المكسيك 🇲🇽 vs جنوب أفريقيا 🇿🇦 · <span style={{color:C.green,fontWeight:600}}>11 يونيو 2026</span></div>}
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
@@ -945,6 +954,32 @@ function HomeTab({profile,myPts,matches,myPreds,favs,myChamp,teams,champLock,liv
           ) : <div style={{fontSize:13.5,color:C.sub}}>{isChampLocked?"مغلق":"اختر من المجموعات"}</div>}
         </div>
       </div>
+
+      {nextUp.length>0 && (
+        <div style={{marginBottom:14}}>
+          <div style={{fontSize:14,fontWeight:700,marginBottom:8}}>⏭️ المباراة القادمة{nextUp.length>1?" ("+nextUp.length+" بنفس التوقيت)":""}</div>
+          {nextUp.map(function(m){
+            const kd2=LD(m.match_utc), pred=myPreds[m.id];
+            return (
+              <div key={m.id} onClick={function(){onOpen(m);}} style={{background:C.card,border:"1px solid "+C.greenBdr,borderRadius:14,padding:"10px 14px",marginBottom:8,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,cursor:"pointer"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,flex:1,minWidth:0}}>
+                  <TeamFlag team={m.team1} size={22}/>
+                  <span style={{fontSize:12.5,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.team1&&m.team1.name_ar}</span>
+                </div>
+                <div style={{textAlign:"center",flexShrink:0}}>
+                  <div style={{fontSize:11.5,color:C.sub}}>{fd(kd2)}</div>
+                  <div style={{background:C.greenBg,border:"1px solid "+C.greenBdr,borderRadius:8,padding:"2px 8px",fontSize:14,fontWeight:900,color:C.green}}>{ft(kd2)}</div>
+                  {pred&&<div style={{fontSize:11.5,color:C.green,marginTop:1}}>توقعي: {pred.pred_team1}-{pred.pred_team2}</div>}
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8,flex:1,justifyContent:"flex-end",minWidth:0}}>
+                  <span style={{fontSize:12.5,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.team2&&m.team2.name_ar}</span>
+                  <TeamFlag team={m.team2} size={22}/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {nextFav.length>0 && (
         <div>
@@ -1718,6 +1753,7 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
   const [h2h,setH2h] = useState(null);
   const [showPreds,setShowPreds] = useState(false);
   const [venueTemp,setVenueTemp] = useState(null);
+  const [extraInfo,setExtraInfo] = useState(null);
 
   const valid=Boolean(match&&match.match_utc);
   const locked=valid&&isLocked(match.match_utc), finished=valid&&match.status==="finished";
@@ -1744,6 +1780,7 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
       });
       callAPI("/fixtures/statistics?fixture="+match.api_fixture_id, isLive2?LIVE_TTL:undefined).then(function(d){setStats(d&&d.response||[]);});
       callAPI("/fixtures/events?fixture="+match.api_fixture_id, isLive2?LIVE_TTL:undefined).then(function(d){setEvents(d&&d.response||[]);});
+      callAPI("/fixtures/extra?fixture="+match.api_fixture_id, isLive2?LIVE_TTL:undefined).then(function(d){ if(d&&d.response) setExtraInfo(d.response); });
     }
     callAPI(lineupsEndpoint()).then(function(d){setLineups(d&&d.response||[]);});
   },[match&&match.api_fixture_id]);
@@ -1863,17 +1900,29 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
     );
   };
   const eventIcon=function(ev){return ev.type==="Goal"?(ev.detail==="Own Goal"?"🔴":"⚽"):ev.type==="Card"?(ev.detail==="Yellow Card"?"🟨":"🟥"):ev.type==="subst"?"🔄":ev.type==="Var"?"📺":"•";};
+  const eventTeam=function(ev){
+    const tn=ev&&ev.team&&ev.team.name;
+    if(!tn) return null;
+    if(match.team1&&nmMatch(tn,TMAP[match.team1_id]||"")) return match.team1;
+    if(match.team2&&nmMatch(tn,TMAP[match.team2_id]||"")) return match.team2;
+    return null;
+  };
   const EventRow=function({ev,ghost,label,minute}){
+    const team=ghost?null:eventTeam(ev);
     const teamName=ev&&ev.team&&ev.team.name;
+    const isSub=!ghost&&ev.type==="subst";
     return (
       <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid "+C.border,opacity:ghost?0.68:1}}>
-        <div style={{width:38,textAlign:"center",flexShrink:0,background:"rgba(255,255,255,.07)",borderRadius:10,padding:"4px 0",fontSize:12.5,fontWeight:900,color:ghost?C.dim:C.gold}}>{ghost?minute:(ev.time&&ev.time.elapsed+(ev.time&&ev.time.extra?"+"+ev.time.extra:""))}&#39;</div>
+        <div style={{width:38,textAlign:"center",flexShrink:0,background:"rgba(255,255,255,.07)",borderRadius:10,padding:"4px 0",fontSize:12.5,fontWeight:900,color:ghost?C.dim:C.gold,direction:"ltr",fontFamily:"Arial,sans-serif"}}>{ghost?minute:(ev.time&&ev.time.elapsed+(ev.time&&ev.time.extra?"+"+ev.time.extra:""))}&#39;</div>
         <span style={{fontSize:18,flexShrink:0}}>{ghost?"○":eventIcon(ev)}</span>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:13.5,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ghost?label:(arName(ev.player&&ev.player.name)||ev.detail)}</div>
-          {!ghost&&ev.assist&&ev.assist.name&&<div style={{fontSize:11.5,color:C.sub}}>مساعدة: {arName(ev.assist.name)}</div>}
+          <div style={{fontSize:13.5,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ghost?label:(isSub?"خرج: ":"")+(arName(shortName(ev.player&&ev.player.name))||ev.detail)}</div>
+          {!ghost&&ev.assist&&ev.assist.name&&<div style={{fontSize:11.5,color:isSub?C.green:C.sub}}>{isSub?"دخل: ":"مساعدة: "}{arName(shortName(ev.assist.name))}</div>}
         </div>
-        <div style={{fontSize:11.5,color:C.dim,flexShrink:0,maxWidth:82,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ghost?"جاهز":teamName}</div>
+        <div style={{flexShrink:0,display:"flex",alignItems:"center",gap:5,maxWidth:96}}>
+          {team&&<TeamFlag team={team} size={15}/>}
+          <span style={{fontSize:11.5,color:C.sub,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ghost?"جاهز":(team?team.name_ar:teamName)}</span>
+        </div>
       </div>
     );
   };
@@ -1890,25 +1939,40 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
       if(ev.type==="subst"&&(hit(pn)||hit(an))) out.push("🔄");
       if(String(ev.detail||"").toLowerCase().includes("injur")&&hit(pn)) out.push("🤕");
     });
-    return out.slice(0,3);
+    // الأهداف تتكرر للثنائيات، أما التبديل والبطاقات فمرة واحدة فقط
+    const seen=new Set(), uniq=[];
+    out.forEach(function(b){
+      if(b==="⚽"||b==="P"){uniq.push(b);return;}
+      if(!seen.has(b)){seen.add(b);uniq.push(b);}
+    });
+    return uniq.slice(0,3);
   };
+  /* الاسم المختصر المتعارف عليه: "Alvarado R." — لو جاء الاسم كاملاً نختصره */
+  const shortName=function(name){
+    const n=String(name||"").trim();
+    if(!n) return "";
+    if(/\.\s*$|\.\s/.test(n)) return n; // مختصر أصلاً
+    const parts=n.split(/\s+/);
+    if(parts.length<2||n.length<=12) return n;
+    return parts[parts.length-1]+" "+parts[0][0]+".";
+  };
+  const fmtFormation=function(f){ return String(f||"").replace(/^1-/,""); };
   const PlayerDot=function({p,ghost}) {
     const img=p&&p.player&&p.player.photo;
-    const inc=p&&p.incidents&&p.incidents.type;
     const name=p&&p.player&&p.player.name?String(p.player.name):"";
     const rating=p&&p.player&&p.player.rating;
     const badges=ghost?[]:playerBadges(name);
     return (
-      <div title={name||"بانتظار اللاعب"} style={{textAlign:"center",minWidth:54,maxWidth:74,opacity:ghost?0.45:1}}>
+      <div title={name||"بانتظار اللاعب"} style={{textAlign:"center",minWidth:54,maxWidth:78,opacity:ghost?0.45:1}}>
         <div style={{position:"relative",width:46,height:46,margin:"0 auto 4px",borderRadius:"50%",background:ghost?"rgba(255,255,255,.10)":"rgba(255,255,255,.14)",border:"1px solid rgba(255,255,255,.25)",overflow:"visible",boxShadow:ghost?"inset 0 0 0 2px rgba(255,255,255,.04)":"0 4px 14px rgba(0,0,0,.18)"}}>
           <div style={{position:"absolute",inset:0,borderRadius:"50%",overflow:"hidden"}}>
           {img?<img src={img} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{fontSize:18,lineHeight:"46px"}}>{ghost?"": "👤"}</div>}
           </div>
-          {rating!=null&&rating!==""&&<span style={{position:"absolute",left:-4,top:-4,fontSize:11.5,fontWeight:900,background:Number(rating)>=7?"#1d8a4f":Number(rating)>=6?"#8a6d1d":"#8a2c2c",color:"#fff",borderRadius:7,padding:"1px 4px",zIndex:2}}>{arDigits(rating)}</span>}
+          {rating!=null&&rating!==""&&<span style={{position:"absolute",left:-4,top:-4,fontSize:11,fontWeight:900,background:Number(rating)>=7?"#1d8a4f":Number(rating)>=6?"#8a6d1d":"#8a2c2c",color:"#fff",borderRadius:7,padding:"1px 4px",zIndex:2,direction:"ltr",fontFamily:"Arial,sans-serif"}}>{rating}</span>}
           {badges.length>0&&<span style={{position:"absolute",right:-5,top:-5,fontSize:11.5,zIndex:2,background:"rgba(0,0,0,.55)",borderRadius:8,padding:"1px 3px"}}>{badges.join("")}</span>}
-          {inc&&<span style={{position:"absolute",right:-1,bottom:-1,fontSize:11.5,background:C.card,borderRadius:8,padding:"1px 3px"}}>{String(inc).includes("1")?"🟨":String(inc).includes("6")?"🔄":String(inc).includes("10")?"⚽":"•"}</span>}
+          {!ghost&&p&&p.player&&p.player.number!=null&&<span style={{position:"absolute",right:-3,bottom:-3,fontSize:10,fontWeight:900,background:"rgba(0,0,0,.65)",color:"#fff",borderRadius:7,padding:"0 4px",zIndex:2,direction:"ltr",fontFamily:"Arial,sans-serif"}}>{p.player.number}</span>}
         </div>
-        <div style={{fontSize:11.5,fontWeight:900,lineHeight:1.15,whiteSpace:"normal",overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",color:ghost?C.dim:C.text,direction:"rtl"}}>{name?((p.player&&p.player.number!=null?arDigits(p.player.number)+" ":"")+arName(name)):"بانتظار الاسم"}</div>
+        <div style={{display:"inline-block",maxWidth:"100%",fontSize:11.5,fontWeight:700,lineHeight:1.3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",color:ghost?C.dim:"#fff",direction:"rtl",background:ghost?"transparent":"rgba(0,0,0,.45)",borderRadius:7,padding:ghost?0:"1px 5px"}}>{name?arName(shortName(name)):"بانتظار الاسم"}</div>
       </div>
     );
   };
@@ -1981,37 +2045,25 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
         <div style={{width:28,height:28,borderRadius:"50%",overflow:"hidden",flexShrink:0,background:"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.2)"}}>
           {img?<img src={img} style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<div style={{fontSize:14,textAlign:"center",lineHeight:"28px"}}>👤</div>}
         </div>
-        <span style={{fontSize:12.5,fontWeight:900,color:C.gold,flexShrink:0,minWidth:18,textAlign:"center"}}>{p&&p.player&&p.player.number!=null?arDigits(p.player.number):""}</span>
-        <span style={{flex:1,minWidth:0,fontSize:12.5,fontWeight:700,direction:"rtl",textAlign:"right",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name?arName(name):"—"}</span>
+        <span style={{fontSize:12.5,fontWeight:900,color:C.gold,flexShrink:0,minWidth:18,textAlign:"center",direction:"ltr",fontFamily:"Arial,sans-serif"}}>{p&&p.player&&p.player.number!=null?p.player.number:""}</span>
+        <span style={{flex:1,minWidth:0,fontSize:12.5,fontWeight:700,direction:"rtl",textAlign:"right",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name?arName(shortName(name)):"—"}</span>
         {reason&&<span style={{fontSize:11.5,color:C.red,flexShrink:0}}>{reason}</span>}
-        {rating!=null&&rating!==""&&<span style={{fontSize:11.5,fontWeight:900,flexShrink:0,background:Number(rating)>=7?"#1d8a4f":Number(rating)>=6?"#8a6d1d":"#8a2c2c",borderRadius:6,padding:"1px 5px"}}>{arDigits(rating)}</span>}
+        {rating!=null&&rating!==""&&<span style={{fontSize:11.5,fontWeight:900,flexShrink:0,background:Number(rating)>=7?"#1d8a4f":Number(rating)>=6?"#8a6d1d":"#8a2c2c",borderRadius:6,padding:"1px 5px",direction:"ltr",fontFamily:"Arial,sans-serif"}}>{rating}</span>}
         {badges.length>0&&<span style={{fontSize:12.5,flexShrink:0}}>{badges.join("")}</span>}
       </div>
     );
   };
   const SquadPanel=function({side,name,team,color}){
-    const starters=sortedStarters(side);
-    const buckets=starterBuckets(side);
+    // الأساسيون على مخطط الملعب فقط — هذا العمود للدكة وغير المشاركين
     const subs=(side&&side.substitutes||[]);
     const benchIn=subs.filter(function(p){return !absenceReason(p);});
     const out=subs.filter(function(p){return absenceReason(p);});
-    const groups=["حراس مرمى","دفاع","وسط","هجوم"];
     return (
       <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:14,padding:"10px 11px",marginTop:10,minWidth:0}}>
         <div style={{marginBottom:6}}>
           <div style={{fontSize:13.5,fontWeight:900,color:color,display:"flex",alignItems:"center",gap:5}}><TeamFlag team={team} size={16}/> <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</span></div>
-          <div style={{fontSize:11.5,color:C.sub,marginTop:2}}>الخطة: {side&&side.formation?side.formation:"بانتظار"} · المدرب: {side&&side.coach&&side.coach.name?arName(side.coach.name):"—"}</div>
+          <div style={{fontSize:11.5,color:C.sub,marginTop:2}}>الخطة: <b style={{direction:"ltr",display:"inline-block",fontFamily:"Arial,sans-serif"}}>{side&&side.formation?fmtFormation(side.formation):"—"}</b> · المدرب: {side&&side.coach&&side.coach.name?arName(side.coach.name):"—"}</div>
         </div>
-        {groups.map(function(g){
-          const list=starters.filter(function(p){const key=(p&&p.player&&(p.player.id||p.player.name))||"";return buckets[key]===g;});
-          if(!list.length) return null;
-          return (
-            <div key={g} style={{borderTop:"1px solid "+C.border,paddingTop:5,marginTop:5}}>
-              <div style={{fontSize:11.5,color:C.gold,fontWeight:900,marginBottom:3}}>{g}</div>
-              {list.map(function(p,i){return <PlayerRow key={(p.player&&p.player.id)||g+i} p={p}/>;})}
-            </div>
-          );
-        })}
         <div style={{borderTop:"1px solid "+C.border,paddingTop:5,marginTop:5}}>
           <div style={{fontSize:11.5,color:C.gold,fontWeight:900,marginBottom:3}}>البدلاء</div>
           {benchIn.length?benchIn.map(function(p,i){return <PlayerRow key={(p.player&&p.player.id)||"b"+i} p={p}/>;}):<div style={{fontSize:11.5,color:C.dim,padding:"3px 0"}}>بانتظار البيانات</div>}
@@ -2032,7 +2084,7 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
     const homeRows=sideRows(home,true);
     return (
       <div>
-        <div style={{position:"relative",minHeight:800,borderRadius:22,overflow:"hidden",border:"1px solid rgba(255,255,255,.18)",background:"linear-gradient(180deg,#0b5f36 0%,#13814b 48%,#0d6139 52%,#064225 100%)",boxShadow:"inset 0 0 0 2px rgba(255,255,255,.06),0 12px 28px rgba(0,0,0,.22)"}}>
+        <div style={{position:"relative",minHeight:900,borderRadius:22,overflow:"hidden",border:"1px solid rgba(255,255,255,.18)",background:"linear-gradient(180deg,#0b5f36 0%,#13814b 48%,#0d6139 52%,#064225 100%)",boxShadow:"inset 0 0 0 2px rgba(255,255,255,.06),0 12px 28px rgba(0,0,0,.22)"}}>
           <div style={{position:"absolute",inset:14,border:"1px solid rgba(255,255,255,.22)",borderRadius:18}}/>
           <div style={{position:"absolute",left:14,right:14,top:"50%",height:1,background:"rgba(255,255,255,.25)"}}/>
           <div style={{position:"absolute",left:"50%",top:"50%",width:92,height:92,marginLeft:-46,marginTop:-46,border:"1px solid rgba(255,255,255,.22)",borderRadius:"50%"}}/>
@@ -2040,11 +2092,11 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
           <div style={{position:"absolute",bottom:14,left:72,right:72,height:64,border:"1px solid rgba(255,255,255,.18)",borderBottom:"none",borderRadius:"18px 18px 0 0"}}/>
           <div style={{position:"absolute",top:10,left:12,right:12,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}>
             <div style={{fontSize:14,fontWeight:900,color:C.red,display:"flex",alignItems:"center",gap:6}}><TeamFlag team={match.team2} size={18}/> {match.team2&&match.team2.name_ar}</div>
-            <div style={{fontSize:12.5,color:C.text,background:"rgba(0,0,0,.28)",borderRadius:999,padding:"4px 9px"}}>{away.formation||"خطة معلنة لاحقاً"}</div>
+            <div style={{fontSize:12.5,color:C.text,background:"rgba(0,0,0,.28)",borderRadius:999,padding:"4px 9px"}}>{away.formation?fmtFormation(away.formation):"خطة معلنة لاحقاً"}</div>
           </div>
           <div style={{position:"absolute",bottom:10,left:12,right:12,display:"flex",justifyContent:"space-between",alignItems:"center",zIndex:2}}>
             <div style={{fontSize:14,fontWeight:900,color:C.green,display:"flex",alignItems:"center",gap:6}}><TeamFlag team={match.team1} size={18}/> {match.team1&&match.team1.name_ar}</div>
-            <div style={{fontSize:12.5,color:C.text,background:"rgba(0,0,0,.28)",borderRadius:999,padding:"4px 9px"}}>{home.formation||"خطة معلنة لاحقاً"}</div>
+            <div style={{fontSize:12.5,color:C.text,background:"rgba(0,0,0,.28)",borderRadius:999,padding:"4px 9px"}}>{home.formation?fmtFormation(home.formation):"خطة معلنة لاحقاً"}</div>
           </div>
           <div style={{position:"absolute",left:8,right:8,top:50,bottom:"51%",display:"flex",flexDirection:"column",justifyContent:"space-around",zIndex:1}}>
             {awayRows.map(function(row,idx){return <div key={"a"+idx} style={{display:"flex",justifyContent:"center",gap:9,flexWrap:"wrap"}}>{row.map(function(p,i){return <PlayerDot key={"a"+idx+"-"+i} p={p} ghost={!p}/>;})}</div>;})}
@@ -2117,7 +2169,7 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
                 ):<div style={{fontSize:12.5,color:C.dim}}>🔒 تظهر بعد بداية المباراة حفاظاً على السرية</div>}
               </div>
             )}
-            {[["📍","الملعب",match.venue||"—"],["🌡️","درجة الحرارة الآن في الملعب",venueTemp&&venueTemp.temp!=null?arDigits(Math.round(venueTemp.temp))+"°م":(venueCoords(match.venue)?"جاري القياس...":"—")],["📅","التاريخ",fw(kd)+" "+fd(kd)],["🕐","التوقيت · "+tzName(),ft(kd)],["🌍","المرحلة",match.stage&&match.stage!=="group"?STAGES[match.stage]:"دور المجموعات - المجموعة "+match.group_id],["🧑‍⚖️","الحكم",(live&&live.fixture&&live.fixture.referee)||"—"]].map(function(x){return (
+            {[["📍","الملعب",match.venue||(extraInfo&&extraInfo.venue)||"—"],["🌡️","درجة الحرارة الآن في الملعب",venueTemp&&venueTemp.temp!=null?arDigits(Math.round(venueTemp.temp))+"°م":(venueCoords(match.venue)?"جاري القياس...":"—")],["📅","التاريخ",fw(kd)+" "+fd(kd)],["🕐","التوقيت · "+tzName(),ft(kd)],["🌍","المرحلة",match.stage&&match.stage!=="group"?STAGES[match.stage]:"دور المجموعات - المجموعة "+match.group_id],["🧑‍⚖️","الحكم",(extraInfo&&extraInfo.referee)||(live&&live.fixture&&live.fixture.referee)||"—"],["👥","الحضور",(extraInfo&&extraInfo.attendance)||"—"]].map(function(x){return (
               <div key={x[1]} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:"1px solid "+C.border}}>
                 <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>{x[0]}</span><span style={{fontSize:13.5,color:C.sub}}>{x[1]}</span></div>
                 <span style={{fontSize:13.5,fontWeight:600,color:x[2]==="—"?C.dim:C.text}}>{x[2]}</span>
@@ -2170,7 +2222,6 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
                   <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:16,padding:"14px 14px 10px"}}>
                     {labels.map(function(t){return <StatRow key={t} label={statLabelMap[t]||t} hv={findStat(h,t)} av={findStat(a,t)}/>;})}
                   </div>
-                  {noteBox("القسم ثابت دائماً، والقيم تتحول من شرطات إلى أرقام تلقائياً عند توفر تحديث المباراة من الخلفية.")}
                 </div>
               );
             })()}
@@ -2188,7 +2239,6 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
                 <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:16,padding:"4px 12px"}}>
                   {evs.length?evs.map(function(ev,i){return <EventRow key={i} ev={ev}/>;}):ghosts.map(function(x,i){return <EventRow key={i} ghost minute={x[0]} label={x[1]}/>;})}
                 </div>
-                {noteBox("القالب جاهز من الآن؛ أول ما تجي أحداث من التحديث الخلفي تظهر هنا بدون ما يتغير شكل القسم.")}
               </div>
               );
             })()}
@@ -2197,9 +2247,8 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
 
         {sec==="lineups"&&(
           <div style={{padding:"14px 16px 24px"}}>
-            {sectionHead("التشكيلة والمراكز",dataState(lineups,"التشكيلة لم تعلن بعد"),<TeamInline team={match.team1} size={15}/>,<TeamInline team={match.team2} size={15} reverse/>)}
+            <div style={{fontSize:13.5,fontWeight:900,color:C.gold,marginBottom:12}}>التشكيلة والمراكز</div>
             <MatchPitchLineup/>
-            {noteBox("الملعب صار واحد بالطول للموبايل. الصور المصغرة، التقييمات، وإشارات الهدف/الإنذار/الطرد/التبديل تظهر على اللاعب نفسه إذا رجعتها بيانات المباراة.")}
           </div>
         )}
 
@@ -2248,7 +2297,6 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
                     </div>
                   );
                 })}
-                {noteBox("تم تجهيز الخلفية عشان تجيب نتائج كؤوس العالم السابقة وتخزنها بالكاش؛ إذا ما لقت مواجهة مباشرة يبقى القالب واضح بدل ما يظهر كأنه مكسور.")}
               </div>
               );
             })()}

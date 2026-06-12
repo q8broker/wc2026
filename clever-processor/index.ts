@@ -1042,15 +1042,16 @@ async function handleEndpoint(endpoint: string) {
     const response = await squadFallbackLineups(fixture);
     return { get: "fixtures/lineups-squad-fallback", errors: [], results: Array.isArray(response) ? response.length : 0, response };
   }
-  if (fixtureId && ["/fixtures/events", "/fixtures/statistics", "/fixtures/lineups", "/fixtures/players"].includes(path)) {
+  if (fixtureId && ["/fixtures/events", "/fixtures/statistics", "/fixtures/lineups", "/fixtures/players", "/fixtures/extra"].includes(path)) {
     await refreshMatchDetails(fixtureId);
     const details = await getDetails(fixtureId);
     const key = path.endsWith("events") ? "events"
       : path.endsWith("statistics") ? "statistics"
         : path.endsWith("lineups") ? "lineups"
-          : "player_stats";
-    const response = details?.[key] ?? [];
-    return { get: path.replace(/^\//, ""), errors: [], results: Array.isArray(response) ? response.length : 1, response };
+          : path.endsWith("extra") ? "extra_info"
+            : "player_stats";
+    const response = details?.[key] ?? (path.endsWith("extra") ? null : []);
+    return { get: path.replace(/^\//, ""), errors: [], results: Array.isArray(response) ? response.length : (response ? 1 : 0), response };
   }
 
   return { get: path, errors: { unsupported: "Endpoint is not mapped to SportDB yet." }, results: 0, response: [] };
