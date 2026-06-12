@@ -813,9 +813,9 @@ async function refreshMatchDetails(fixtureId: string, force = false) {
       requests.push(hasOfficialNames ? "lineups" : "squad-fallback");
     }
 
-    // الإحصائيات والأحداث: أثناء المباراة كل 12 دقيقة وبعد نهايتها للتوثيق.
+    // الإحصائيات والأحداث: أثناء المباراة كل 15 دقيقة وبعد نهايتها للتوثيق.
     // ما بعد النهاية يُحسب على الحصة الأساسية (مرة واحدة لكل مباراة) حتى لا يعلق التوثيق.
-    if ((liveNow || (isFT && (!details?.finalized_at || force))) && (force || isStale(details?.last_statistics_sync_at, 12))) {
+    if ((liveNow || (isFT && (!details?.finalized_at || force))) && (force || isStale(details?.last_statistics_sync_at, 15))) {
       const statsRaw = await sportGet(`/api/flashscore/match/${fixtureId}/stats`, isFT).catch((err) => ({ error: String(err) }));
       const freshStats = normalizeStatistics(statsRaw, fixture);
       const hadStats = Array.isArray(details?.statistics) && details.statistics.length > 0;
@@ -833,8 +833,8 @@ async function refreshMatchDetails(fixtureId: string, force = false) {
       }
       requests.push("details");
 
-      // التقييمات والمراكز: كل 25 دقيقة أثناء اللعب + مرة ختامية بعد النهاية
-      if (force || isFT || isStale(details?.last_player_stats_sync_at, 25)) {
+      // التقييمات والمراكز: كل 30 دقيقة أثناء اللعب + مرة ختامية بعد النهاية
+      if (force || isFT || isStale(details?.last_player_stats_sync_at, 30)) {
         const psRaw = await sportGet(`/api/flashscore/match/${fixtureId}/playerstats`, isFT).catch((err) => ({ error: String(err) }));
         const ratings = collectRatings(psRaw);
         const positions = collectPositions(psRaw);
@@ -1089,12 +1089,30 @@ async function handleEndpoint(endpoint: string) {
   return { get: path, errors: { unsupported: "Endpoint is not mapped to SportDB yet." }, results: 0, response: [] };
 }
 
-async function handleAction(body: AnyRow) {
+/* تعيين كلمة مرور عضو — للأدمن فقط (يُتحقق من JWT المرسل ثم من is_admin) */
+async function adminSetPassword(body: AnyRow, token: string | null) {
+  if (!token) return { ok: false, error: "يجب تسجيل الدخول" };
+  const { data: caller, error: authErr } = await supabase.auth.getUser(token);
+  if (authErr || !caller?.user) return { ok: false, error: "جلسة غير صالحة" };
+  const { data: prof } = await supabase
+    .from("profiles").select("is_admin").eq("id", caller.user.id).maybeSingle();
+  if (!prof?.is_admin) return { ok: false, error: "هذه الخاصية للمشرف فقط" };
+  const userId = String(body.userId ?? "");
+  const password = String(body.password ?? "");
+  if (!userId) return { ok: false, error: "اختر العضو" };
+  if (password.length < 6) return { ok: false, error: "كلمة المرور 6 أحرف على الأقل" };
+  const { error } = await supabase.auth.admin.updateUserById(userId, { password });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+async function handleAction(body: AnyRow, token: string | null = null) {
   const action = body.action ?? "refresh";
   if (action === "probe" && body.key === "dbg2026") {
     const payload = await sportGet(String(body.path), true).catch((e) => ({ error: String(e) }));
     return { ok: true, result: payload };
   }
+  if (action === "admin-set-password") return await adminSetPassword(body, token);
   if (action === "refresh") return { ok: true, result: await refreshFixtures(Boolean(body.force)) };
   if (action === "match-details") return { ok: true, result: await refreshMatchDetails(String(body.fixtureId), Boolean(body.force)) };
   if (action === "bootstrap") return { ok: true, result: await refreshFixtures(true) };
@@ -1108,8 +1126,9 @@ serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
+    const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "") || null;
     if (body.endpoint) return send(await handleEndpoint(String(body.endpoint)));
-    return send(await handleAction(body));
+    return send(await handleAction(body, token));
   } catch (error) {
     return send({
       errors: { server: error instanceof Error ? error.message : String(error) },

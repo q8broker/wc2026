@@ -9,12 +9,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="WC 2026">
 <meta name="theme-color" content="#020b1c">
-<link rel="manifest" href="manifest.json?v=20260612-v16">
+<link rel="manifest" href="manifest.json?v=20260612-v17">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
 if("serviceWorker" in navigator){
   window.addEventListener("load",function(){
-    navigator.serviceWorker.register("sw.js?v=20260612-v16").then(function(reg){
+    navigator.serviceWorker.register("sw.js?v=20260612-v17").then(function(reg){
       if(reg&&reg.update) reg.update();
     }).catch(function(){});
   });
@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v16-20260612";
+const APP_VERSION = "v17-20260612";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -375,7 +375,10 @@ function App() {
 
     const sub = sb.auth.onAuthStateChange(function(ev, session){
       if(session && session.user) {
-        if(ev==="SIGNED_IN" || ev==="TOKEN_REFRESHED") {
+        if(ev==="PASSWORD_RECOVERY") {
+          // جاء من رابط "نسيت كلمة المرور" في الإيميل — نعرض شاشة تعيين كلمة جديدة
+          settled=true; clearTimeout(t); setScr("recovery");
+        } else if(ev==="SIGNED_IN" || ev==="TOKEN_REFRESHED") {
           loadProfile(session.user.id);
         }
       } else {
@@ -404,6 +407,13 @@ function App() {
     </div>
   );
   if(scr==="auth") return <AuthScr onSuccess={function(uid){setScr("loading");loadProfile(uid);} }/>;
+  if(scr==="recovery") return <RecoveryScr onDone={function(){
+    setScr("loading");
+    sb.auth.getSession().then(function(res){
+      const s=res.data&&res.data.session;
+      if(s&&s.user) loadProfile(s.user.id); else setScr("auth");
+    });
+  }}/>;
   if(scr==="pending") return (
     <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,textAlign:"center"}}>
       <div style={{fontSize:48,marginBottom:14}}>⏳</div>
@@ -413,6 +423,41 @@ function App() {
     </div>
   );
   return <MainApp profile={profile} setProfile={setProfile} tab={tab} setTab={setTab} signOut={signOut}/>;
+}
+
+/* ═══════════════ تعيين كلمة مرور جديدة (بعد رابط الاستعادة) ═══ */
+function RecoveryScr({onDone}) {
+  const [p1,setP1] = useState("");
+  const [p2,setP2] = useState("");
+  const [err,setErr] = useState("");
+  const [busy,setBusy] = useState(false);
+  const go = async () => {
+    setErr("");
+    if(p1.length<6) { setErr("كلمة المرور 6 أحرف على الأقل"); return; }
+    if(p1!==p2) { setErr("الكلمتان غير متطابقتين"); return; }
+    setBusy(true);
+    try {
+      const {error} = await sb.auth.updateUser({password:p1});
+      if(error) throw error;
+      onDone();
+    } catch(e) { setErr(String(e.message||e)); setBusy(false); }
+  };
+  return (
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"20px 16px"}}>
+      <div style={{width:"100%",maxWidth:380}}>
+        <div style={{textAlign:"center",marginBottom:24}}>
+          <div style={{fontSize:48,marginBottom:6}}>🔑</div>
+          <div style={{fontSize:20,fontWeight:900}}>تعيين كلمة مرور جديدة</div>
+        </div>
+        <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:20,padding:24}}>
+          <Inp value={p1} onChange={setP1} placeholder="كلمة المرور الجديدة" type="password"/>
+          <Inp value={p2} onChange={setP2} placeholder="تأكيد كلمة المرور" type="password"/>
+          {err && <div style={{color:C.red,fontSize:13,marginBottom:10,textAlign:"center"}}>{err}</div>}
+          <Btn onClick={go} color="gold" disabled={busy} full>{busy?"...":"حفظ والدخول"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /* ═══════════════════════ AUTH ═══════════════════════════════ */
@@ -485,6 +530,22 @@ function AuthScr({onSuccess}) {
           {err && <div style={{color:C.red,fontSize:13.5,marginBottom:10,textAlign:"center"}}>{err}</div>}
           {ok && <div style={{color:C.green,fontSize:13.5,marginBottom:10,textAlign:"center"}}>{ok}</div>}
           <Btn onClick={go} color="gold" disabled={busy} full>{busy?"...":(isLogin?"دخول":"تسجيل")}</Btn>
+          {isLogin && (
+            <div style={{textAlign:"center",marginTop:12,fontSize:13,color:C.sub,cursor:"pointer"}}
+              onClick={async function(){
+                setErr(""); setOk("");
+                if(!email.trim()){ setErr("اكتب بريدك الإلكتروني أولاً ثم اضغط نسيت كلمة المرور"); return; }
+                setBusy(true);
+                try {
+                  const {error} = await sb.auth.resetPasswordForEmail(email.trim(),{redirectTo:"https://q8broker.github.io/wc2026/"});
+                  if(error) throw error;
+                  setOk("أرسلنا رابط استعادة كلمة المرور إلى بريدك — افحص أيضاً مجلد السبام");
+                } catch(e) { setErr(String(e.message||e)); }
+                setBusy(false);
+              }}>
+              نسيت كلمة المرور؟ <span style={{color:C.gold,fontWeight:700}}>أرسل رابط الاستعادة</span>
+            </div>
+          )}
           {regOpen?(
             <div style={{textAlign:"center",marginTop:14,fontSize:14,color:C.sub}}>
               {isLogin?"ماعندك حساب؟ ":"عندك حساب؟ "}
@@ -848,7 +909,7 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
         {tab==="match" && <MatchesTab matches={matches} myPreds={myPreds} savePred={savePred} matchFlt={matchFlt} setMatchFlt={setMatchFlt} teamFilter={teamMatchFilter} setTeamFilter={setTeamMatchFilter} liveMap={liveMap} onOpen={setPopup}/>}
         {tab==="knock" && <KnockTab matches={matches.filter(function(m){return m.stage&&m.stage!=="group";})} allMatches={matches} teams={teams} myPreds={myPreds} liveMap={liveMap} onOpen={setPopup}/>}
         {tab==="board" && <BoardTab leaderboard={leaderboard} profile={profile} allPreds={allPreds} matches={matches}/>}
-        {tab==="admin" && <AdminTab pending={pending} matches={matches} teams={teams} approveUser={approveUser} setResult={setResult} champWin={champWin} setChampWinner={setChampWinner} syncAPI={syncAPI} pullResults={pullResults} applyResults={applyResults} appSettings={appSettings} toggleSetting={toggleSetting}/>}
+        {tab==="admin" && <AdminTab pending={pending} matches={matches} teams={teams} approveUser={approveUser} setResult={setResult} champWin={champWin} setChampWinner={setChampWinner} syncAPI={syncAPI} pullResults={pullResults} applyResults={applyResults} appSettings={appSettings} toggleSetting={toggleSetting} members={profiles}/>}
       </main>
 
       {showInst && (
@@ -1615,7 +1676,25 @@ function BoardTab({leaderboard,profile,allPreds,matches}) {
 }
 
 /* ═══════════════ ADMIN TAB ════════════════════════════════════ */
-function AdminTab({pending,matches,teams,approveUser,setResult,champWin,setChampWinner,syncAPI,pullResults,applyResults,appSettings,toggleSetting}) {
+function AdminTab({pending,matches,teams,approveUser,setResult,champWin,setChampWinner,syncAPI,pullResults,applyResults,appSettings,toggleSetting,members}) {
+  const [pwUser,setPwUser] = useState("");
+  const [pwVal,setPwVal] = useState("");
+  const [pwMsg,setPwMsg] = useState("");
+  const [pwBusy,setPwBusy] = useState(false);
+  const doSetPassword = async function(){
+    setPwMsg("");
+    if(!pwUser){ setPwMsg("اختر العضو"); return; }
+    if(pwVal.length<6){ setPwMsg("كلمة المرور 6 أحرف على الأقل"); return; }
+    setPwBusy(true);
+    try {
+      const {data,error} = await sb.functions.invoke("clever-processor",{body:{action:"admin-set-password",userId:pwUser,password:pwVal}});
+      if(error) throw error;
+      if(data&&data.error) throw new Error(data.error);
+      setPwMsg("✅ تم تعيين كلمة المرور — بلّغ العضو بها");
+      setPwVal("");
+    } catch(e){ setPwMsg("❌ "+String(e.message||e)); }
+    setPwBusy(false);
+  };
   const [sel,setSel] = useState(null);
   const [r1,setR1] = useState(""), [r2,setR2] = useState("");
   const [busy,setBusy] = useState(false);
@@ -1671,6 +1750,21 @@ function AdminTab({pending,matches,teams,approveUser,setResult,champWin,setChamp
           </div>
         </div>
       );})}
+
+      <div style={{fontSize:14,fontWeight:700,color:C.gold,marginBottom:12}}>🔑 تعيين كلمة مرور لعضو</div>
+      <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:14,padding:12,marginBottom:16}}>
+        <div style={{fontSize:12.5,color:C.sub,marginBottom:8,lineHeight:1.6}}>لمن نسي كلمة مروره: اختر العضو واكتب كلمة مرور جديدة وبلّغه بها. (يوجد أيضاً رابط "نسيت كلمة المرور" في شاشة الدخول يرسل رابط استعادة للإيميل)</div>
+        <select value={pwUser} onChange={function(e){setPwUser(e.target.value);}} style={{width:"100%",padding:"10px 12px",background:"rgba(255,255,255,.06)",border:"1px solid "+C.border,borderRadius:10,color:C.text,fontSize:14,fontFamily:"inherit",outline:"none",marginBottom:10}}>
+          <option value="">اختر العضو...</option>
+          {(members||[]).map(function(u){return <option key={u.id} value={u.id}>{u.display_name} (@{u.username})</option>;})}
+        </select>
+        <div style={{display:"flex",gap:8}}>
+          <input value={pwVal} onChange={function(e){setPwVal(e.target.value);}} placeholder="كلمة المرور الجديدة" type="text"
+            style={{flex:1,padding:"10px 12px",background:"rgba(255,255,255,.06)",border:"1px solid "+C.border,borderRadius:10,color:C.text,fontSize:14,fontFamily:"inherit",outline:"none",direction:"ltr"}}/>
+          <Btn onClick={doSetPassword} color="gold" disabled={pwBusy}>{pwBusy?"...":"تعيين"}</Btn>
+        </div>
+        {pwMsg&&<div style={{marginTop:8,fontSize:12.5,textAlign:"center",color:pwMsg.indexOf("✅")>=0?C.green:C.red,fontWeight:700}}>{pwMsg}</div>}
+      </div>
 
       <div style={{fontSize:14,fontWeight:700,color:C.gold,marginBottom:12}}>⚙️ إعدادات الانتساب</div>
       <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:14,padding:12,marginBottom:16}}>
