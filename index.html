@@ -9,12 +9,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="WC 2026">
 <meta name="theme-color" content="#020b1c">
-<link rel="manifest" href="manifest.json?v=20260612-v19">
+<link rel="manifest" href="manifest.json?v=20260612-v20">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
 if("serviceWorker" in navigator){
   window.addEventListener("load",function(){
-    navigator.serviceWorker.register("sw.js?v=20260612-v19").then(function(reg){
+    navigator.serviceWorker.register("sw.js?v=20260612-v20").then(function(reg){
       if(reg&&reg.update) reg.update();
     }).catch(function(){});
   });
@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v19-20260612";
+const APP_VERSION = "v20-20260612";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -243,13 +243,23 @@ const calcPts = (pred, match) => {
 };
 
 /* ── GROUP STANDINGS ────────────────────────────────────────── */
-const calcStandings = (matches, teams) => {
+const calcStandings = (matches, teams, liveMap) => {
   const st = {};
   Object.values(teams).forEach(t => { st[t.id]={team:t,p:0,w:0,d:0,l:0,gf:0,ga:0,gd:0,pts:0}; });
-  matches.filter(m=>(m.stage==="group"||!m.stage)&&m.status==="finished").forEach(m=>{
+  matches.filter(m=>(m.stage==="group"||!m.stage)).forEach(m=>{
     const a=st[m.team1_id], b=st[m.team2_id];
     if(!a||!b) return;
-    const r1=m.result_team1, r2=m.result_team2;
+    let r1=null, r2=null;
+    if(m.status==="finished" && m.result_team1!=null){
+      r1=m.result_team1; r2=m.result_team2;
+    } else if(liveMap){
+      // مباراة جارية: النتيجة الحالية تدخل الترتيب مؤقتاً وتثبت عند النهاية
+      const lv=liveFor(m,liveMap);
+      if(lv&&lv.status&&isLiveShort(lv.status.short)&&lv.goals&&lv.goals.home!=null&&lv.goals.away!=null){
+        r1=lv.goals.home; r2=lv.goals.away;
+      }
+    }
+    if(r1==null||r2==null) return;
     a.p++;b.p++;a.gf+=r1;a.ga+=r2;b.gf+=r2;b.ga+=r1;
     if(r1>r2){a.w++;a.pts+=3;b.l++;}
     else if(r1<r2){b.w++;b.pts+=3;a.l++;}
@@ -906,7 +916,7 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
 
       <main className="fu" key={tab} style={{padding:"0 14px",paddingTop:16}}>
         {tab==="home"  && <HomeTab profile={profile} myPts={myPts} matches={matches} myPreds={myPreds} favs={favs} myChamp={myChamp} teams={teams} champLock={champLock} liveMap={liveMap} onOpen={setPopup}/>}
-        {tab==="grps"  && <GroupsTab matches={matches} teams={teams} favs={favs} toggleFav={toggleFav} myChamp={myChamp} saveChampion={saveChampion} champLock={champLock} onTeamMatches={function(id){setTeamMatchFilter(id);setMatchFlt("all");setTab("match");}}/>}
+        {tab==="grps"  && <GroupsTab matches={matches} teams={teams} favs={favs} toggleFav={toggleFav} myChamp={myChamp} saveChampion={saveChampion} champLock={champLock} liveMap={liveMap} onTeamMatches={function(id){setTeamMatchFilter(id);setMatchFlt("all");setTab("match");}}/>}
         {tab==="match" && <MatchesTab matches={matches} myPreds={myPreds} savePred={savePred} matchFlt={matchFlt} setMatchFlt={setMatchFlt} teamFilter={teamMatchFilter} setTeamFilter={setTeamMatchFilter} liveMap={liveMap} onOpen={setPopup}/>}
         {tab==="knock" && <KnockTab matches={matches.filter(function(m){return m.stage&&m.stage!=="group";})} allMatches={matches} teams={teams} myPreds={myPreds} liveMap={liveMap} onOpen={setPopup}/>}
         {tab==="board" && <BoardTab leaderboard={leaderboard} profile={profile} allPreds={allPreds} matches={matches}/>}
@@ -1126,12 +1136,12 @@ function HomeTab({profile,myPts,matches,myPreds,favs,myChamp,teams,champLock,liv
 }
 
 /* ═══════════════ GROUPS TAB ══════════════════════════════════ */
-function GroupsTab({matches,teams,favs,toggleFav,myChamp,saveChampion,champLock,onTeamMatches}) {
+function GroupsTab({matches,teams,favs,toggleFav,myChamp,saveChampion,champLock,liveMap,onTeamMatches}) {
   const [saving,setSaving] = useState(null);
   const [ok,setOk] = useState(false);
   const [champErr,setChampErr] = useState("");
   const isChampLocked = new Date()>=champLock;
-  const standings = useMemo(function(){return calcStandings(matches,teams);},[matches,teams]);
+  const standings = useMemo(function(){return calcStandings(matches,teams,liveMap);},[matches,teams,liveMap]);
   const gids = Object.keys(standings).sort();
 
   const pickChamp = async (teamId) => {
@@ -1380,7 +1390,7 @@ function KnockTab({matches,allMatches,teams,myPreds,liveMap,onOpen}) {
   };
   const bys={};
   matches.forEach(function(m){const s=m.stage||"R32";if(!bys[s])bys[s]=[];bys[s].push(m);});
-  const standings = calcStandings(allMatches||[], teams||{});
+  const standings = calcStandings(allMatches||[], teams||{}, liveMap);
   const thirds = Object.keys(standings).map(function(g){return standings[g]&&standings[g][2];}).filter(Boolean).sort(function(a,b){return b.pts-a.pts||b.gd-a.gd||b.gf-a.gf;});
   const placeholderTeam=function(name){return {id:null,flag:"🏳️",name_ar:name,is_arab:false};};
   const slotLabel=function(slot){
