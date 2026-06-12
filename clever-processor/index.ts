@@ -722,16 +722,33 @@ function collectRatings(value: any, out: Record<string, number> = {}, depth = 0)
   return out;
 }
 
-function applyRatings(lineups: AnyRow[], ratings: Record<string, number>) {
-  const withRating = (p: AnyRow) => {
+/* مراكز اللاعبين النصية من playerstats: {name, position:{name}, link:"/api/.../{playerId}"} */
+function collectPositions(value: any, out: Record<string, string> = {}, depth = 0) {
+  if (!value || depth > 7) return out;
+  if (Array.isArray(value)) { for (const item of value) collectPositions(item, out, depth + 1); return out; }
+  if (typeof value !== "object") return out;
+  const posName = value?.position?.name;
+  if (posName && (value.link || value.playerId || value.id)) {
+    const id = String(value.playerId ?? value.id ?? String(value.link ?? "").split("/").pop() ?? "");
+    if (id) out[id] = String(posName);
+  }
+  for (const child of Object.values(value)) collectPositions(child, out, depth + 1);
+  return out;
+}
+
+function applyRatings(lineups: AnyRow[], ratings: Record<string, number>, positions: Record<string, string> = {}) {
+  const withMeta = (p: AnyRow) => {
     const id = String(p?.player?.id ?? "");
-    if (!id || ratings[id] == null) return p;
-    return { ...p, player: { ...p.player, rating: ratings[id] } };
+    if (!id || (ratings[id] == null && !positions[id])) return p;
+    const player = { ...p.player };
+    if (ratings[id] != null) player.rating = ratings[id];
+    if (positions[id]) player.pos = positions[id];
+    return { ...p, player };
   };
   return lineups.map((side: AnyRow) => ({
     ...side,
-    startXI: (side.startXI ?? []).map(withRating),
-    substitutes: (side.substitutes ?? []).map(withRating),
+    startXI: (side.startXI ?? []).map(withMeta),
+    substitutes: (side.substitutes ?? []).map(withMeta),
   }));
 }
 
@@ -759,9 +776,10 @@ async function refreshMatchDetails(fixtureId: string, force = false) {
 
   const hasCachedLineupNames = Array.isArray(details?.lineups)
     && details.lineups.some((side: AnyRow) => (side.startXI ?? []).some((player: AnyRow) => player?.player?.name));
-  // بذر التشكيلة الافتراضية (قائمة المنتخب) قبل المباراة بوقت طويل:
-  // مرة واحدة تكفي، وإن فشلت نعيد المحاولة كل 6 ساعات حفاظاً على الميزانية
-  const needSeedLineups = !hasCachedLineupNames && isStale(details?.last_lineups_sync_at, 360);
+  // بذر التشكيلة الافتراضية (قائمة المنتخب): فقط للمباريات خلال الـ36 ساعة القادمة
+  // حتى لا يستنزف تصفح المباريات البعيدة ميزانية اليوم، وإعادة المحاولة كل 6 ساعات
+  const within36h = kickoff != null && kickoff - now < 36 * 60 * 60_000;
+  const needSeedLineups = !hasCachedLineupNames && within36h && isStale(details?.last_lineups_sync_at, 360);
 
   // مباراة بعيدة وما انتهت ولا تحتاج بذر تشكيلة: لا نصرف عليها شي
   if (!force && !nearKickoff && !isFT && !needSeedLineups) {
@@ -771,33 +789,41 @@ async function refreshMatchDetails(fixtureId: string, force = false) {
   const patch: AnyRow = {};
   const requests: string[] = [];
 
+  // تشكيلة "رسمية" = أسماء + خانات خطة (positionKey) — أعلى رتبة من قائمة المنتخب الأبجدية
+  const cachedOfficial = Array.isArray(details?.lineups)
+    && details.lineups.some((side: AnyRow) => (side.startXI ?? []).some((player: AnyRow) => player?.player?.name && player?.raw?.positionKey != null));
+
   try {
-    // التشكيلة: بذر مبكر ثم تحديث رسمي قرب الانطلاق. بعد وصول الأسماء لا نعيد جلبها —
-    // التقييمات تأتي من playerstats وإشارات الأحداث من details (أوفر للميزانية)
-    const lineupsStale = !hasCachedLineupNames
-      && isStale(details?.last_lineups_sync_at, needSeedLineups || nearKickoff ? 45 : 360);
-    if (force || lineupsStale) {
-      const lineupsRaw = await sportGet(`/api/flashscore/match/${fixtureId}/lineups`).catch((err) => ({ error: String(err) }));
+    // التشكيلة: بذر مبكر (قائمة منتخب)، ثم ترقية للتشكيلة الرسمية قرب الانطلاق وبعدها.
+    // الرسمية المحفوظة لا تُلمس ولا تُستبدل بقائمة أبجدية أبداً.
+    const lineupsStale = !cachedOfficial && (
+      !hasCachedLineupNames
+        ? isStale(details?.last_lineups_sync_at, needSeedLineups || nearKickoff ? 45 : 360)
+        : ((nearKickoff || liveNow || isFT) && isStale(details?.last_lineups_sync_at, 30))
+    );
+    if (force ? !cachedOfficial : lineupsStale) {
+      const lineupsRaw = await sportGet(`/api/flashscore/match/${fixtureId}/lineups`, isFT).catch((err) => ({ error: String(err) }));
       const officialLineups = normalizeLineups(lineupsRaw);
       const hasOfficialNames = officialLineups.some((side: AnyRow) => (side.startXI ?? []).some((player: AnyRow) => player?.player?.name));
       const fresh = hasOfficialNames ? officialLineups : await squadFallbackLineups(fixture);
       const freshHasNames = Array.isArray(fresh) && fresh.some((side: AnyRow) => [...(side.startXI ?? []), ...(side.substitutes ?? [])].some((player: AnyRow) => player?.player?.name));
-      // لا نمسح تشكيلة محفوظة بنتيجة فارغة — التحديث يكتب فقط إذا جاء ببيانات فعلية
-      if (freshHasNames) patch.lineups = fresh;
+      // الكتابة فقط ببيانات فعلية، والقائمة الأبجدية لا تحل محل أسماء محفوظة
+      if (freshHasNames && (hasOfficialNames || !hasCachedLineupNames)) patch.lineups = fresh;
       patch.last_lineups_sync_at = new Date().toISOString();
       requests.push(hasOfficialNames ? "lineups" : "squad-fallback");
     }
 
-    // الإحصائيات والأحداث والتقييمات: أثناء المباراة وبعد نهايتها، كل 20 دقيقة كحد أقصى
-    if ((liveNow || (isFT && !details?.finalized_at)) && (force || isStale(details?.last_statistics_sync_at, 20))) {
-      const statsRaw = await sportGet(`/api/flashscore/match/${fixtureId}/stats`).catch((err) => ({ error: String(err) }));
+    // الإحصائيات والأحداث: أثناء المباراة كل 12 دقيقة وبعد نهايتها للتوثيق.
+    // ما بعد النهاية يُحسب على الحصة الأساسية (مرة واحدة لكل مباراة) حتى لا يعلق التوثيق.
+    if ((liveNow || (isFT && (!details?.finalized_at || force))) && (force || isStale(details?.last_statistics_sync_at, 12))) {
+      const statsRaw = await sportGet(`/api/flashscore/match/${fixtureId}/stats`, isFT).catch((err) => ({ error: String(err) }));
       const freshStats = normalizeStatistics(statsRaw, fixture);
       const hadStats = Array.isArray(details?.statistics) && details.statistics.length > 0;
       if (freshStats.length || !hadStats) patch.statistics = freshStats; // لا نمسح المحفوظ بفارغ
       patch.last_statistics_sync_at = new Date().toISOString();
       requests.push("stats");
 
-      const detRaw = await sportGet(`/api/flashscore/match/${fixtureId}/details`).catch((err) => ({ error: String(err) }));
+      const detRaw = await sportGet(`/api/flashscore/match/${fixtureId}/details`, isFT).catch((err) => ({ error: String(err) }));
       const freshEvents = normalizeEvents(detRaw, fixture);
       const hadEvents = Array.isArray(details?.events) && details.events.length > 0;
       if (freshEvents.length || !hadEvents) patch.events = freshEvents;
@@ -807,22 +833,28 @@ async function refreshMatchDetails(fixtureId: string, force = false) {
       }
       requests.push("details");
 
-      const psRaw = await sportGet(`/api/flashscore/match/${fixtureId}/playerstats`).catch((err) => ({ error: String(err) }));
-      const ratings = collectRatings(psRaw);
-      const baseLineups = patch.lineups ?? details?.lineups;
-      if (Object.keys(ratings).length && Array.isArray(baseLineups) && baseLineups.length) {
-        patch.lineups = applyRatings(baseLineups, ratings);
+      // التقييمات والمراكز: كل 25 دقيقة أثناء اللعب + مرة ختامية بعد النهاية
+      if (force || isFT || isStale(details?.last_player_stats_sync_at, 25)) {
+        const psRaw = await sportGet(`/api/flashscore/match/${fixtureId}/playerstats`, isFT).catch((err) => ({ error: String(err) }));
+        const ratings = collectRatings(psRaw);
+        const positions = collectPositions(psRaw);
+        const baseLineups = patch.lineups ?? details?.lineups;
+        if ((Object.keys(ratings).length || Object.keys(positions).length) && Array.isArray(baseLineups) && baseLineups.length) {
+          patch.lineups = applyRatings(baseLineups, ratings, positions);
+        }
+        patch.last_player_stats_sync_at = new Date().toISOString();
+        requests.push("playerstats");
       }
-      requests.push("playerstats");
     }
   } catch (err) {
     if (!String(err).includes("BUDGET_EXCEEDED")) throw err;
   }
 
-  // التوثيق النهائي: المباراة انتهت + إحصائيات محفوظة، أو مرّت 6 ساعات على نهايتها
+  // التوثيق النهائي: انتهت + إحصائيات وأحداث محفوظة فعلاً، أو مرّت 6 ساعات على نهايتها
   const ftAgedOut = isFT && kickoff != null && now - kickoff > 6 * 60 * 60_000;
   const hasStats = Array.isArray(patch.statistics ?? details?.statistics) && (patch.statistics ?? details?.statistics).length > 0;
-  if (isFT && (hasStats || ftAgedOut)) {
+  const hasEvents = Array.isArray(patch.events ?? details?.events) && (patch.events ?? details?.events).length > 0;
+  if (isFT && ((hasStats && hasEvents) || ftAgedOut)) {
     patch.finalized_at = new Date().toISOString();
   }
 
