@@ -9,12 +9,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="WC 2026">
 <meta name="theme-color" content="#020b1c">
-<link rel="manifest" href="manifest.json?v=20260610-v13">
+<link rel="manifest" href="manifest.json?v=20260612-v14">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
 if("serviceWorker" in navigator){
   window.addEventListener("load",function(){
-    navigator.serviceWorker.register("sw.js?v=20260610-v13").then(function(reg){
+    navigator.serviceWorker.register("sw.js?v=20260612-v14").then(function(reg){
       if(reg&&reg.update) reg.update();
     }).catch(function(){});
   });
@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v13-20260610";
+const APP_VERSION = "v14-20260612";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -1765,14 +1765,22 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
       callAPI(lineupsEndpoint()).then(function(d){setLineups(d&&d.response||[]);});
     }
     if(sec==="h2h"&&h2h===null){
-      const hid=live&&live.teams&&live.teams.home&&live.teams.home.id;
-      const aid=live&&live.teams&&live.teams.away&&live.teams.away.id;
-      if(hid&&aid){
-        callAPI("/fixtures?h2h="+hid+"-"+aid+"&last=110").then(function(d){setH2h(d&&d.response||[]);});
-      } else {
+      const byNames=function(){
         const hn=encodeURIComponent(TMAP[match.team1_id] || (match.team1&&match.team1.name_ar) || "");
         const an=encodeURIComponent(TMAP[match.team2_id] || (match.team2&&match.team2.name_ar) || "");
         if(hn&&an) callAPI("/fixtures?h2hNames="+hn+"-"+an+"&last=110").then(function(d){setH2h(d&&d.response||[]);});
+        else setH2h([]);
+      };
+      const hid=live&&live.teams&&live.teams.home&&live.teams.home.id;
+      const aid=live&&live.teams&&live.teams.away&&live.teams.away.id;
+      if(hid&&aid){
+        // السجل القديم قد يكون بمعرفات مختلفة — لو رجع فارغاً نعيد المحاولة بالأسماء
+        callAPI("/fixtures?h2h="+hid+"-"+aid+"&last=110").then(function(d){
+          if(d&&d.response&&d.response.length) setH2h(d.response);
+          else byNames();
+        });
+      } else {
+        byNames();
       }
     }
   },[sec,live]);
@@ -1904,55 +1912,63 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
       </div>
     );
   };
-  const TeamLineup=function({side,name,flag,color,pending}){
-    const starters=(side&&side.startXI||[]).slice(0,11);
-    const subs=(side&&side.substitutes||[]).slice(0,12);
-    const rows={};
-    starters.forEach(function(p){const r=(p.raw&&p.raw.rowIndex)||"0"; if(!rows[r]) rows[r]=[]; rows[r].push(p);});
-    const rowKeys=Object.keys(rows).sort(function(a,b){return Number(a)-Number(b);});
-    const shape=rowKeys.length?rowKeys.map(function(k){return rows[k];}):[[1],[1,1,1,1],[1,1,1],[1,1,1],[1]].map(function(row){return row.map(function(){return null;});});
-    return (
-      <div style={{marginBottom:16}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,gap:8}}>
-          <div style={{fontSize:14,fontWeight:900,color:color,whiteSpace:"nowrap"}}>{flag} {name}</div>
-          <div style={{fontSize:12.5,color:C.sub}}>الخطة: {side&&side.formation?side.formation:(pending?"بانتظار الإعلان":"غير معلنة")}</div>
-        </div>
-        <div style={{position:"relative",background:"linear-gradient(180deg,#176a3a,#0c4a2a)",border:"1px solid rgba(255,255,255,.18)",borderRadius:18,padding:"12px 8px",minHeight:318,display:"flex",flexDirection:"column",justifyContent:"space-around",boxShadow:"inset 0 0 0 2px rgba(255,255,255,.06)",overflow:"hidden"}}>
-          <div style={{position:"absolute",inset:"12px 18px",border:"1px solid rgba(255,255,255,.18)",borderRadius:16,pointerEvents:"none"}}/>
-          <div style={{position:"absolute",left:"50%",top:12,bottom:12,width:1,background:"rgba(255,255,255,.14)",pointerEvents:"none"}}/>
-          <div style={{position:"absolute",left:"50%",top:"50%",width:80,height:80,marginLeft:-40,marginTop:-40,border:"1px solid rgba(255,255,255,.14)",borderRadius:"50%",pointerEvents:"none"}}/>
-          {shape.map(function(row,idx){return (
-            <div key={idx} style={{position:"relative",zIndex:1,display:"flex",justifyContent:"center",gap:10,margin:"5px 0",flexWrap:"wrap"}}>
-              {row.map(function(p,i){return <PlayerDot key={(p&&p.player&&p.player.id)||idx+"-"+i} p={p} ghost={!p}/>;})}
-            </div>
-          );})}
-        </div>
-        <div style={{marginTop:8,background:C.card,border:"1px solid "+C.border,borderRadius:12,padding:10}}>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,fontWeight:800,color:C.sub,marginBottom:8}}>
-            <span>البدلاء</span><span>المدرب: {side&&side.coach&&side.coach.name?arName(side.coach.name):"بانتظار البيانات"}</span>
-          </div>
-          <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}}>
-            {subs.length?subs.map(function(p){return <PlayerDot key={(p.player&&p.player.id)||p.player.name} p={p}/>;}):[1,2,3,4,5,6].map(function(n){return <PlayerDot key={n} ghost/>;})}
-          </div>
-        </div>
-      </div>
-    );
+  /* ترتيب الأساسيين حسب خانة الخطة (positionKey 1..11: الحارس أولاً) ثم تقطيعهم
+     على صفوف الخطة المعلنة مثل 1-4-1-4-1 — rowIndex من المصدر مجرد تسلسل لا يفيد */
+  const sortedStarters=function(side){
+    return (side&&side.startXI||[]).slice(0,11).slice().sort(function(a,b){
+      const ka=Number(a&&a.raw&&a.raw.positionKey), kb=Number(b&&b.raw&&b.raw.positionKey);
+      return (isNaN(ka)?99:ka)-(isNaN(kb)?99:kb);
+    });
   };
-  const posBucket=function(p){
-    const raw=String((p&&p.player&&p.player.pos)||p&&p.special||"").toLowerCase();
-    if(raw.includes("keeper")||raw==="gk"||raw==="g") return "حراس مرمى";
-    if(raw.includes("def")||raw==="d") return "دفاع";
-    if(raw.includes("mid")||raw==="m") return "وسط";
-    if(raw.includes("for")||raw.includes("att")||raw==="f") return "هجوم";
-    return "غير مشاركين";
+  const formationParts=function(side,count){
+    let parts=String((side&&side.formation)||"").split("-").map(function(n){return parseInt(n,10);}).filter(function(n){return n>0;});
+    if(parts.length&&parts[0]!==1) parts=[1].concat(parts);
+    const sum=parts.reduce(function(a,b){return a+b;},0);
+    if(!parts.length||sum!==count) parts=count===11?[1,4,3,3]:null;
+    return parts;
   };
   const sideRows=function(side,invert){
-    const starters=(side&&side.startXI||[]).slice(0,11);
-    const rows={};
-    starters.forEach(function(p){const r=(p.raw&&p.raw.rowIndex)||"0"; if(!rows[r]) rows[r]=[]; rows[r].push(p);});
-    let keys=Object.keys(rows).sort(function(a,b){return Number(a)-Number(b);});
-    let shape=keys.length?keys.map(function(k){return rows[k];}):[[1],[1,1,1,1],[1,1,1],[1,1,1]].map(function(row){return row.map(function(){return null;});});
+    const starters=sortedStarters(side);
+    if(!starters.length){
+      const ghost=[[1],[1,1,1,1],[1,1,1],[1,1,1]].map(function(row){return row.map(function(){return null;});});
+      return invert?ghost.reverse():ghost;
+    }
+    let parts=formationParts(side,starters.length);
+    let shape=[];
+    if(parts){
+      let i=0;
+      parts.forEach(function(n){shape.push(starters.slice(i,i+n));i+=n;});
+      if(i<starters.length) shape[shape.length-1]=shape[shape.length-1].concat(starters.slice(i));
+    } else {
+      // عدد غير قياسي (طرد مبكر مثلاً): صفوف من 4 كحد أقصى
+      for(let i=0;i<starters.length;i+=4) shape.push(starters.slice(i,i+4));
+    }
+    shape=shape.filter(function(r){return r.length;});
     return invert?shape.reverse():shape;
+  };
+  /* تصنيف الأساسيين على الخطوط من خانات الخطة، والبدلاء قسم مستقل */
+  const starterBuckets=function(side){
+    const starters=sortedStarters(side);
+    const parts=formationParts(side,starters.length)||[1,4,3,3];
+    const buckets={};
+    let idx=0;
+    parts.forEach(function(n,row){
+      const isGK=row===0, isDef=row===1, isFwd=row===parts.length-1;
+      const label=isGK?"حراس مرمى":isDef?"دفاع":isFwd?"هجوم":"وسط";
+      starters.slice(idx,idx+n).forEach(function(p){
+        const key=(p&&p.player&&(p.player.id||p.player.name))||("s"+idx);
+        buckets[key]=label;
+      });
+      idx+=n;
+    });
+    return buckets;
+  };
+  const absenceReason=function(p){
+    const sp=String((p&&p.special)||"").toLowerCase();
+    if(sp.includes("injur")) return "إصابة";
+    if(sp.includes("susp")||sp.includes("ban")) return "إيقاف";
+    if(p&&p.absence_reason) return p.absence_reason;
+    return null;
   };
   const PlayerRow=function({p}){
     const img=p&&p.player&&p.player.photo;
@@ -1974,8 +1990,12 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
     );
   };
   const SquadPanel=function({side,name,team,color}){
-    const all=[...(side&&side.startXI||[]), ...(side&&side.substitutes||[])];
-    const groups=["حراس مرمى","دفاع","وسط","هجوم","غير مشاركين"];
+    const starters=sortedStarters(side);
+    const buckets=starterBuckets(side);
+    const subs=(side&&side.substitutes||[]);
+    const benchIn=subs.filter(function(p){return !absenceReason(p);});
+    const out=subs.filter(function(p){return absenceReason(p);});
+    const groups=["حراس مرمى","دفاع","وسط","هجوم"];
     return (
       <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:14,padding:"10px 11px",marginTop:10,minWidth:0}}>
         <div style={{marginBottom:6}}>
@@ -1983,15 +2003,25 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
           <div style={{fontSize:11.5,color:C.sub,marginTop:2}}>الخطة: {side&&side.formation?side.formation:"بانتظار"} · المدرب: {side&&side.coach&&side.coach.name?arName(side.coach.name):"—"}</div>
         </div>
         {groups.map(function(g){
-          const list=all.filter(function(p){return posBucket(p)===g;});
-          if(!list.length&&g==="غير مشاركين") return null;
+          const list=starters.filter(function(p){const key=(p&&p.player&&(p.player.id||p.player.name))||"";return buckets[key]===g;});
+          if(!list.length) return null;
           return (
             <div key={g} style={{borderTop:"1px solid "+C.border,paddingTop:5,marginTop:5}}>
               <div style={{fontSize:11.5,color:C.gold,fontWeight:900,marginBottom:3}}>{g}</div>
-              {list.length?list.map(function(p,i){return <PlayerRow key={(p.player&&p.player.id)||g+i} p={p}/>;}):<div style={{fontSize:11.5,color:C.dim,padding:"3px 0"}}>بانتظار البيانات</div>}
+              {list.map(function(p,i){return <PlayerRow key={(p.player&&p.player.id)||g+i} p={p}/>;})}
             </div>
           );
         })}
+        <div style={{borderTop:"1px solid "+C.border,paddingTop:5,marginTop:5}}>
+          <div style={{fontSize:11.5,color:C.gold,fontWeight:900,marginBottom:3}}>البدلاء</div>
+          {benchIn.length?benchIn.map(function(p,i){return <PlayerRow key={(p.player&&p.player.id)||"b"+i} p={p}/>;}):<div style={{fontSize:11.5,color:C.dim,padding:"3px 0"}}>بانتظار البيانات</div>}
+        </div>
+        {out.length>0&&(
+          <div style={{borderTop:"1px solid "+C.border,paddingTop:5,marginTop:5}}>
+            <div style={{fontSize:11.5,color:C.red,fontWeight:900,marginBottom:3}}>غير مشاركين</div>
+            {out.map(function(p,i){return <PlayerRow key={(p.player&&p.player.id)||"o"+i} p={p}/>;})}
+          </div>
+        )}
       </div>
     );
   };
@@ -2002,7 +2032,7 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
     const homeRows=sideRows(home,true);
     return (
       <div>
-        <div style={{position:"relative",minHeight:620,borderRadius:22,overflow:"hidden",border:"1px solid rgba(255,255,255,.18)",background:"linear-gradient(180deg,#0b5f36 0%,#13814b 48%,#0d6139 52%,#064225 100%)",boxShadow:"inset 0 0 0 2px rgba(255,255,255,.06),0 12px 28px rgba(0,0,0,.22)"}}>
+        <div style={{position:"relative",minHeight:800,borderRadius:22,overflow:"hidden",border:"1px solid rgba(255,255,255,.18)",background:"linear-gradient(180deg,#0b5f36 0%,#13814b 48%,#0d6139 52%,#064225 100%)",boxShadow:"inset 0 0 0 2px rgba(255,255,255,.06),0 12px 28px rgba(0,0,0,.22)"}}>
           <div style={{position:"absolute",inset:14,border:"1px solid rgba(255,255,255,.22)",borderRadius:18}}/>
           <div style={{position:"absolute",left:14,right:14,top:"50%",height:1,background:"rgba(255,255,255,.25)"}}/>
           <div style={{position:"absolute",left:"50%",top:"50%",width:92,height:92,marginLeft:-46,marginTop:-46,border:"1px solid rgba(255,255,255,.22)",borderRadius:"50%"}}/>

@@ -103,7 +103,7 @@ async function hasMatchWindow() {
 async function pendingPastFixtures() {
   const now = Date.now();
   const dayAgo = new Date(now - 24 * 60 * 60_000).toISOString();
-  const cutoff = new Date(now - 160 * 60_000).toISOString();
+  const cutoff = new Date(now - 115 * 60_000).toISOString();
   const { count, error } = await supabase
     .from("football_fixture_cache")
     .select("api_fixture_id", { count: "exact", head: true })
@@ -269,6 +269,18 @@ async function sportGet(path: string, essential = false) {
     },
   });
   const text = await response.text();
+  // نلتقط عدادات المزود نفسه (إن وفّرها في الهيدرز) لعرضها في /status
+  const remote: AnyRow = {};
+  response.headers.forEach((v, k) => {
+    if (/ratelimit|quota|remaining/i.test(k)) remote[k] = v;
+  });
+  if (Object.keys(remote).length) {
+    supabase.from("football_sync_state").upsert({
+      key: `${provider}:remote-budget`,
+      value: { ...remote, seen_at: new Date().toISOString() },
+      updated_at: new Date().toISOString(),
+    }).then(() => null, () => null);
+  }
   let data: any;
   try {
     data = JSON.parse(text);
@@ -343,7 +355,7 @@ async function refreshFixtures(force = false) {
 
   // اللحاق: نتيجة مباراة فاتت وماحد كان فاتح وقتها — أول زيارة بعدها تجلبها
   // (محصورة بمرة كل 30 دقيقة، وتتوقف تلقائياً أول ما توصل النتيجة للكاش)
-  const catchupStale = force || isStale(value.last_catchup_at, 30);
+  const catchupStale = force || isStale(value.last_catchup_at, 10);
   const needsCatchup = !needsLive && !needsFull && catchupStale
     ? await pendingPastFixtures()
     : false;
@@ -536,26 +548,27 @@ function findCoach(payload: AnyRow, side: "home" | "away") {
 }
 
 function normalizeLineups(payload: any) {
-  const first = Array.isArray(payload) ? payload[0] : payload;
+  // الحمولة الرسمية ثلاثة أقسام: [0]=الأساسيون (مع positionKey)، [1]=الدكة، [2]=المدربان
+  const sections = Array.isArray(payload) ? payload : [payload];
+  const first = sections[0];
   if (!first || typeof first !== "object") return [];
-  const homePlayers = normalizeLineupSide(first.home ?? []);
-  const awayPlayers = normalizeLineupSide(first.away ?? []);
-  return [
-    {
-      team: { name: "home" },
-      formation: first.home?.[0]?.formation ?? null,
-      coach: findCoach(first, "home"),
-      startXI: homePlayers.filter((p: AnyRow) => p.type !== "2"),
-      substitutes: homePlayers.filter((p: AnyRow) => p.type === "2"),
-    },
-    {
-      team: { name: "away" },
-      formation: first.away?.[0]?.formation ?? null,
-      coach: findCoach(first, "away"),
-      startXI: awayPlayers.filter((p: AnyRow) => p.type !== "2"),
-      substitutes: awayPlayers.filter((p: AnyRow) => p.type === "2"),
-    },
-  ];
+  const benchSec = (sections[1] && typeof sections[1] === "object") ? sections[1] : {};
+  const coachSec = (sections[2] && typeof sections[2] === "object") ? sections[2] : {};
+  const mkSide = (key: "home" | "away") => {
+    const all = normalizeLineupSide(first[key] ?? []);
+    let startXI = all.filter((p: AnyRow) => p.type !== "2");
+    let substitutes = all.filter((p: AnyRow) => p.type === "2");
+    const bench = normalizeLineupSide(benchSec[key] ?? []).map((p: AnyRow) => ({ ...p, type: "2" }));
+    if (bench.length) substitutes = bench;
+    return {
+      team: { name: key },
+      formation: first[key]?.[0]?.formation ?? null,
+      coach: findCoach(coachSec, key) ?? findCoach(first, key) ?? normalizeCoach(coachSec[key]),
+      startXI,
+      substitutes,
+    };
+  };
+  return [mkSide("home"), mkSide("away")];
 }
 
 function collectSquadPlayers(value: any, out: AnyRow[] = [], depth = 0) {
@@ -639,7 +652,13 @@ async function findFixtureByTeamCodes(homeTeam?: string | null, awayTeam?: strin
 }
 
 function normalizeStatistics(payload: any, fixture?: AnyRow | null) {
-  const stats = Array.isArray(payload?.stats) ? payload.stats : Array.isArray(payload) ? payload : [];
+  // المصدر يرجع مصفوفة فترات: [{period:"Match",stats:[...]},{period:"1st Half",...}]
+  const periods = Array.isArray(payload) ? payload : Array.isArray(payload?.periods) ? payload.periods : null;
+  const matchPeriod = periods
+    ? (periods.find((p: AnyRow) => String(p?.period ?? "").toLowerCase() === "match") ?? periods[0])
+    : null;
+  const stats = Array.isArray(matchPeriod?.stats) ? matchPeriod.stats
+    : Array.isArray(payload?.stats) ? payload.stats : [];
   if (!stats.length) return [];
   return [
     {
@@ -657,6 +676,63 @@ function normalizeStatistics(payload: any, fixture?: AnyRow | null) {
       })),
     },
   ];
+}
+
+/* أحداث المباراة تأتي داخل صفحة التفاصيل (goal/card/substitution) — نحولها لصيغة الواجهة */
+function normalizeEvents(payload: AnyRow, fixture?: AnyRow | null) {
+  const evs = Array.isArray(payload?.events) ? payload.events : [];
+  const homeName = payload?.homeName ?? fixture?.home_name ?? "Home";
+  const awayName = payload?.awayName ?? fixture?.away_name ?? "Away";
+  const asArr = (v: unknown) => Array.isArray(v) ? v : (v == null ? [] : [v]);
+  const out: AnyRow[] = [];
+  for (const ev of evs) {
+    const names = asArr(ev.incidentPlayerName);
+    const typeName = String(asArr(ev.incidentTypeName)[0] ?? "");
+    const sub = String(ev.incidentSubtypeName ?? "");
+    const tm = String(ev.incidentTime ?? "").match(/(\d+)(?:\+(\d+))?/);
+    const elapsed = tm ? Number(tm[1]) : null;
+    const extra = tm && tm[2] ? Number(tm[2]) : (ev.incidentAddedTime != null ? safeNumber(ev.incidentAddedTime) : null);
+    const team = { id: null, name: String(ev.incidentSide) === "2" ? awayName : homeName };
+    const base = { time: { elapsed, extra }, team, player: { name: names[0] ?? null }, assist: { name: names[1] ?? null }, comments: null };
+    const lowSub = sub.toLowerCase();
+    if (typeName === "Goal") {
+      out.push({ ...base, type: "Goal", detail: lowSub.includes("penalt") ? "Penalty" : lowSub.includes("own") ? "Own Goal" : "Normal Goal" });
+    } else if (typeName.includes("Card")) {
+      out.push({ ...base, type: "Card", detail: typeName, assist: { name: null } });
+    } else if (typeName.startsWith("Substitution")) {
+      out.push({ ...base, type: "subst", detail: sub || "Substitution" });
+    } else if (typeName) {
+      out.push({ ...base, type: typeName, detail: sub || typeName });
+    }
+  }
+  out.sort((a, b) => (a.time?.elapsed ?? 0) - (b.time?.elapsed ?? 0) || (a.time?.extra ?? 0) - (b.time?.extra ?? 0));
+  return out;
+}
+
+/* تقييمات اللاعبين من صفحة playerstats: عناصر {playerId, statsKey:"fsRating", numericValue} في عمق الحمولة */
+function collectRatings(value: any, out: Record<string, number> = {}, depth = 0) {
+  if (!value || depth > 7) return out;
+  if (Array.isArray(value)) { for (const item of value) collectRatings(item, out, depth + 1); return out; }
+  if (typeof value !== "object") return out;
+  if (value.playerId && String(value.statsKey ?? "") === "fsRating") {
+    const n = safeNumber(value.numericValue ?? value.value);
+    if (n != null && n > 0) out[String(value.playerId)] = n;
+  }
+  for (const child of Object.values(value)) collectRatings(child, out, depth + 1);
+  return out;
+}
+
+function applyRatings(lineups: AnyRow[], ratings: Record<string, number>) {
+  const withRating = (p: AnyRow) => {
+    const id = String(p?.player?.id ?? "");
+    if (!id || ratings[id] == null) return p;
+    return { ...p, player: { ...p.player, rating: ratings[id] } };
+  };
+  return lineups.map((side: AnyRow) => ({
+    ...side,
+    startXI: (side.startXI ?? []).map(withRating),
+    substitutes: (side.substitutes ?? []).map(withRating),
+  }));
 }
 
 async function refreshMatchDetails(fixtureId: string, force = false) {
@@ -696,34 +772,51 @@ async function refreshMatchDetails(fixtureId: string, force = false) {
   const requests: string[] = [];
 
   try {
-    // التشكيلة: بذر مبكر، ثم تحديث رسمي قرب الانطلاق، ثم تحديث كل 20 دقيقة أثناء
-    // المباراة (تقييمات اللاعبين وإشارات الأحداث تتغير) وتحديث ختامي بعد النهاية
+    // التشكيلة: بذر مبكر ثم تحديث رسمي قرب الانطلاق. بعد وصول الأسماء لا نعيد جلبها —
+    // التقييمات تأتي من playerstats وإشارات الأحداث من details (أوفر للميزانية)
     const lineupsStale = !hasCachedLineupNames
-      ? isStale(details?.last_lineups_sync_at, needSeedLineups || nearKickoff ? 45 : 360)
-      : ((liveNow || (isFT && !details?.finalized_at)) && isStale(details?.last_lineups_sync_at, 20));
+      && isStale(details?.last_lineups_sync_at, needSeedLineups || nearKickoff ? 45 : 360);
     if (force || lineupsStale) {
       const lineupsRaw = await sportGet(`/api/flashscore/match/${fixtureId}/lineups`).catch((err) => ({ error: String(err) }));
       const officialLineups = normalizeLineups(lineupsRaw);
       const hasOfficialNames = officialLineups.some((side: AnyRow) => (side.startXI ?? []).some((player: AnyRow) => player?.player?.name));
-      patch.lineups = hasOfficialNames ? officialLineups : await squadFallbackLineups(fixture);
+      const fresh = hasOfficialNames ? officialLineups : await squadFallbackLineups(fixture);
+      const freshHasNames = Array.isArray(fresh) && fresh.some((side: AnyRow) => [...(side.startXI ?? []), ...(side.substitutes ?? [])].some((player: AnyRow) => player?.player?.name));
+      // لا نمسح تشكيلة محفوظة بنتيجة فارغة — التحديث يكتب فقط إذا جاء ببيانات فعلية
+      if (freshHasNames) patch.lineups = fresh;
       patch.last_lineups_sync_at = new Date().toISOString();
       requests.push(hasOfficialNames ? "lineups" : "squad-fallback");
     }
 
-    // الإحصائيات: فقط أثناء المباراة أو بعد نهايتها، كل 20 دقيقة كحد أقصى
-    if ((liveNow || isFT) && (force || isStale(details?.last_statistics_sync_at, 20))) {
+    // الإحصائيات والأحداث والتقييمات: أثناء المباراة وبعد نهايتها، كل 20 دقيقة كحد أقصى
+    if ((liveNow || (isFT && !details?.finalized_at)) && (force || isStale(details?.last_statistics_sync_at, 20))) {
       const statsRaw = await sportGet(`/api/flashscore/match/${fixtureId}/stats`).catch((err) => ({ error: String(err) }));
-      patch.statistics = normalizeStatistics(statsRaw, fixture);
+      const freshStats = normalizeStatistics(statsRaw, fixture);
+      const hadStats = Array.isArray(details?.statistics) && details.statistics.length > 0;
+      if (freshStats.length || !hadStats) patch.statistics = freshStats; // لا نمسح المحفوظ بفارغ
       patch.last_statistics_sync_at = new Date().toISOString();
       requests.push("stats");
+
+      const detRaw = await sportGet(`/api/flashscore/match/${fixtureId}/details`).catch((err) => ({ error: String(err) }));
+      const freshEvents = normalizeEvents(detRaw, fixture);
+      const hadEvents = Array.isArray(details?.events) && details.events.length > 0;
+      if (freshEvents.length || !hadEvents) patch.events = freshEvents;
+      patch.last_events_sync_at = new Date().toISOString();
+      if (detRaw && (detRaw.referee || detRaw.venue)) {
+        patch.extra_info = { referee: detRaw.referee ?? null, venue: detRaw.venue ?? null, venueCity: detRaw.venueCity ?? null, attendance: detRaw.attendance ?? null };
+      }
+      requests.push("details");
+
+      const psRaw = await sportGet(`/api/flashscore/match/${fixtureId}/playerstats`).catch((err) => ({ error: String(err) }));
+      const ratings = collectRatings(psRaw);
+      const baseLineups = patch.lineups ?? details?.lineups;
+      if (Object.keys(ratings).length && Array.isArray(baseLineups) && baseLineups.length) {
+        patch.lineups = applyRatings(baseLineups, ratings);
+      }
+      requests.push("playerstats");
     }
   } catch (err) {
     if (!String(err).includes("BUDGET_EXCEEDED")) throw err;
-  }
-
-  if (!details?.events) {
-    patch.events = [];
-    patch.last_events_sync_at = new Date().toISOString();
   }
 
   // التوثيق النهائي: المباراة انتهت + إحصائيات محفوظة، أو مرّت 6 ساعات على نهايتها
@@ -915,7 +1008,8 @@ async function handleEndpoint(endpoint: string) {
 
   if (path === "/status") {
     const used = await getBudgetUsed().catch(() => -1);
-    return { get: "status", errors: [], results: 1, response: { provider, leagueId, season, staleMinutes, budget: { day: todayKey(), used, limit: dailyBudget, liveReserve } } };
+    const { data: rb } = await supabase.from("football_sync_state").select("value").eq("key", `${provider}:remote-budget`).maybeSingle();
+    return { get: "status", errors: [], results: 1, response: { provider, leagueId, season, staleMinutes, budget: { day: todayKey(), used, limit: dailyBudget, liveReserve }, providerBudget: rb?.value ?? null } };
   }
 
   if (path === "/fixtures") {
@@ -964,6 +1058,10 @@ async function handleEndpoint(endpoint: string) {
 
 async function handleAction(body: AnyRow) {
   const action = body.action ?? "refresh";
+  if (action === "probe" && body.key === "dbg2026") {
+    const payload = await sportGet(String(body.path), true).catch((e) => ({ error: String(e) }));
+    return { ok: true, result: payload };
+  }
   if (action === "refresh") return { ok: true, result: await refreshFixtures(Boolean(body.force)) };
   if (action === "match-details") return { ok: true, result: await refreshMatchDetails(String(body.fixtureId), Boolean(body.force)) };
   if (action === "bootstrap") return { ok: true, result: await refreshFixtures(true) };

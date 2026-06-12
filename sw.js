@@ -1,4 +1,4 @@
-const CACHE_NAME = "wc2026-v13-20260610";
+const CACHE_NAME = "wc2026-v14-20260612";
 
 self.addEventListener("install", function(event) {
   self.skipWaiting();
