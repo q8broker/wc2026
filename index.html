@@ -9,12 +9,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="WC 2026">
 <meta name="theme-color" content="#020b1c">
-<link rel="manifest" href="manifest.json?v=20260612-v20">
+<link rel="manifest" href="manifest.json?v=20260615-v21">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
 if("serviceWorker" in navigator){
   window.addEventListener("load",function(){
-    navigator.serviceWorker.register("sw.js?v=20260612-v20").then(function(reg){
+    navigator.serviceWorker.register("sw.js?v=20260615-v21").then(function(reg){
       if(reg&&reg.update) reg.update();
     }).catch(function(){});
   });
@@ -41,11 +41,11 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v20-20260612";
+const APP_VERSION = "v21-20260615";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
