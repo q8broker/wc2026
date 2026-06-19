@@ -74,14 +74,40 @@ async function getBudgetUsed() {
 }
 
 async function spendOne(essential = false) {
-  const used = await getBudgetUsed();
   const limit = essential ? dailyBudget : dailyBudget - liveReserve;
-  if (used >= limit) throw new Error("BUDGET_EXCEEDED");
-  await supabase.from("football_sync_state").upsert({
-    key: `${provider}:budget`,
-    value: { day: todayKey(), used: used + 1 },
-    updated_at: new Date().toISOString(),
-  });
+  // صرف ذرّي: القاعدة تزيد العداد فقط إذا كان تحت الحد (يمنع التجاوز مهما تزامن العدد)
+  try {
+    const { data, error } = await supabase.rpc("try_spend", {
+      p_key: `${provider}:budget`, p_day: todayKey(), p_limit: limit,
+    });
+    if (error) throw error;
+    if (data !== true) throw new Error("BUDGET_EXCEEDED");
+    return;
+  } catch (e) {
+    if (e instanceof Error && e.message === "BUDGET_EXCEEDED") throw e;
+    // احتياط: لو تعذّر استدعاء الدالة لأي سبب، نرجع للطريقة القديمة حتى لا يتعطل كل شيء
+    const used = await getBudgetUsed();
+    if (used >= limit) throw new Error("BUDGET_EXCEEDED");
+    await supabase.from("football_sync_state").upsert({
+      key: `${provider}:budget`,
+      value: { day: todayKey(), used: used + 1 },
+      updated_at: new Date().toISOString(),
+    });
+  }
+}
+
+/* قفل ذرّي: يطالب بفتحة التحديث لحقل معيّن. يرجع true لمتقدّم واحد فقط.
+   p_minutes=0 يعني مطالبة قسرية (تنجح دائماً وتحدّث الطابع). احتياط عند الفشل: isStale. */
+async function claimSync(key: string, field: string, minutes: number, fallbackLast?: string | null) {
+  try {
+    const { data, error } = await supabase.rpc("claim_sync", {
+      p_key: key, p_field: field, p_minutes: minutes,
+    });
+    if (error) throw error;
+    return data === true;
+  } catch (_e) {
+    return isStale(fallbackLast, minutes); // شبكة أمان لو الدالة غير متاحة
+  }
 }
 
 /* هل توجد مباراة الآن أو على وشك البدء؟ (نافذة: 30 دقيقة قبل → 160 دقيقة بعد الانطلاق) */
@@ -261,13 +287,22 @@ async function sportGet(path: string, essential = false) {
   if (!apiKey) throw new Error("Missing FOOTBALL_API_KEY secret");
   await spendOne(essential);
   const url = `${baseUrl.replace(/\/$/, "")}${path.startsWith("/") ? path : `/${path}`}`;
-  const response = await fetch(url, {
-    headers: {
-      [apiHeader]: apiKey,
-      "Accept": "application/json",
-      "User-Agent": "Mozilla/5.0 WC2026 Supabase Edge Cache",
-    },
-  });
+  // مهلة قصوى 8 ثوانٍ لكل طلب — حتى لا يتعلّق التشغيل لو تأخّر المصدر
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      signal: ctrl.signal,
+      headers: {
+        [apiHeader]: apiKey,
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 WC2026 Supabase Edge Cache",
+      },
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   const text = await response.text();
   // نلتقط عدادات المزود نفسه (إن وفّرها في الهيدرز) لعرضها في /status
   const remote: AnyRow = {};
@@ -345,23 +380,28 @@ async function hasFixtures() {
 async function refreshFixtures(force = false) {
   const { key, state } = await getState();
   const value = (state?.value ?? {}) as AnyRow;
-  const hasCachedFixtures = await hasFixtures();
-  const needsFull = force || !hasCachedFixtures || isStale(value.last_full_at, fullRefreshHours * 60);
-  const liveStale = force || isStale(value.last_live_at, staleMinutes);
 
-  // اللايف يُستهلك فقط إذا فيه مباراة جارية أو قريبة — خارج النافذة الكاش يكفي
-  const inWindow = liveStale ? await hasMatchWindow() : false;
-  const needsLive = liveStale && inWindow;
+  // كل قرار يُطالَب به ذرّياً: claimSync يفحص ويكتب وقت المحاولة في خطوة واحدة،
+  // فلا ينجح إلا متقدّم واحد مهما تزامن عدد المستخدمين (يحل تعارض التزامن).
+  const hasCachedFixtures = await hasFixtures();
+  const needsFull = (force || !hasCachedFixtures)
+    ? await claimSync(key, "last_full_at", 0, value.last_full_at)               // قسري
+    : await claimSync(key, "last_full_at", fullRefreshHours * 60, value.last_full_at);
+
+  // اللايف: فقط إذا فيه مباراة جارية/قريبة، ثم نطالب بالفتحة ذرّياً
+  let needsLive = false;
+  if (await hasMatchWindow()) {
+    needsLive = await claimSync(key, "last_live_at", force ? 0 : staleMinutes, value.last_live_at);
+  }
 
   // اللحاق: نتيجة مباراة فاتت وماحد كان فاتح وقتها — أول زيارة بعدها تجلبها
-  // (محصورة بمرة كل 30 دقيقة، وتتوقف تلقائياً أول ما توصل النتيجة للكاش)
-  const catchupStale = force || isStale(value.last_catchup_at, 10);
-  const needsCatchup = !needsLive && !needsFull && catchupStale
-    ? await pendingPastFixtures()
-    : false;
+  let needsCatchup = false;
+  if (!needsLive && !needsFull && await pendingPastFixtures()) {
+    needsCatchup = await claimSync(key, "last_catchup_at", force ? 0 : 10, value.last_catchup_at);
+  }
 
   if (!needsLive && !needsFull && !needsCatchup) {
-    return { skipped: true, reason: liveStale ? "no-match-window" : "fresh", state: value };
+    return { skipped: true, reason: "fresh-or-claimed", state: value };
   }
 
   const paths: string[] = [];
@@ -391,16 +431,8 @@ async function refreshFixtures(force = false) {
 
   const items = responses.flatMap(asList);
   const upserted = await upsertFixtures(items);
-  const now = new Date().toISOString();
-
-  await setState(key, {
-    ...value,
-    last_live_at: needsLive ? now : value.last_live_at,
-    last_full_at: needsFull ? now : value.last_full_at,
-    last_catchup_at: (needsCatchup || needsFull) ? now : value.last_catchup_at,
-    last_paths: paths,
-    last_count: upserted,
-  });
+  // ملاحظة: طوابع الأوقات حُدِّثت ذرّياً داخل claimSync (jsonb_set يحفظ بقية الحقول)،
+  // فلا نعيد كتابة value كاملاً هنا حتى لا نلغي تحديثات متزامنة.
 
   return { skipped: false, full: needsFull, catchup: needsCatchup, requests: paths.length, upserted, paths };
 }
@@ -1041,7 +1073,8 @@ async function handleEndpoint(endpoint: string) {
   if (path === "/status") {
     const used = await getBudgetUsed().catch(() => -1);
     const { data: rb } = await supabase.from("football_sync_state").select("value").eq("key", `${provider}:remote-budget`).maybeSingle();
-    return { get: "status", errors: [], results: 1, response: { provider, leagueId, season, staleMinutes, budget: { day: todayKey(), used, limit: dailyBudget, liveReserve }, providerBudget: rb?.value ?? null } };
+    const { data: cr } = await supabase.from("football_sync_state").select("value").eq("key", `${provider}:cron`).maybeSingle();
+    return { get: "status", errors: [], results: 1, response: { provider, leagueId, season, staleMinutes, budget: { day: todayKey(), used, limit: dailyBudget, liveReserve }, providerBudget: rb?.value ?? null, cron: cr?.value ?? null } };
   }
 
   if (path === "/fixtures") {
@@ -1075,7 +1108,11 @@ async function handleEndpoint(endpoint: string) {
     return { get: "fixtures/lineups-squad-fallback", errors: [], results: Array.isArray(response) ? response.length : 0, response };
   }
   if (fixtureId && ["/fixtures/events", "/fixtures/statistics", "/fixtures/lineups", "/fixtures/players", "/fixtures/extra"].includes(path)) {
-    await refreshMatchDetails(fixtureId);
+    // ── محيَّد لوقف النزيف (2026-06-17) ──────────────────────────────
+    // السطر التالي كان يستدعي بيانات المباراة من المصدر عند كل فتح مستخدم،
+    // وهو سبب نزيف الطلبات. حُوِّل إلى ملاحظة؛ طلب المستخدم الآن قراءة فقط من
+    // قاعدة البيانات. الجلب سيتولّاه لاحقاً موظف cron آلي (قيد الإعداد).
+    // await refreshMatchDetails(fixtureId);
     const details = await getDetails(fixtureId);
     const key = path.endsWith("events") ? "events"
       : path.endsWith("statistics") ? "statistics"
@@ -1106,12 +1143,126 @@ async function adminSetPassword(body: AnyRow, token: string | null) {
   return { ok: true };
 }
 
+/* ── الموظف الآلي (cron) ───────────────────────────────────────────
+   يعمل كل ~5 دقائق. الوحيد الذي يجلب من المصدر. حالياً: النتائج + التشكيلة فقط.
+   (الأحداث/الإحصائيات/التقييمات ستُضاف لاحقاً بعد الاتفاق). */
+const hasOfficialLineup = (det: AnyRow | null) =>
+  Array.isArray(det?.lineups)
+  && det.lineups.some((s: AnyRow) => (s.startXI ?? []).some((p: AnyRow) => p?.player?.name && p?.raw?.positionKey != null));
+
+async function cronTick() {
+  // (1) تحديث النتائج/الحالة — رخيص وذرّي، حتى نعرف من بدأ/انتهى بلا اعتماد على المستخدمين
+  await refreshFixtures(false).catch(() => null);
+
+  // نبضة حياة: نسجّل وقت آخر تشغيل (يظهر في /status لمراقبة أن الموظف حيّ)
+  await supabase.from("football_sync_state").upsert({
+    key: `${provider}:cron`, value: { last_tick: new Date().toISOString() }, updated_at: new Date().toISOString(),
+  }).then(() => null, () => null);
+
+  // (2) مباريات البطولة المرتبطة
+  const { data: rows } = await supabase
+    .from("football_fixture_cache")
+    .select("api_fixture_id,kickoff_at,status_short,home_name,away_name,home_team_id,away_team_id")
+    .gte("kickoff_at", `${tournamentStart}T00:00:00Z`)
+    .lte("kickoff_at", `${tournamentEnd}T23:59:59Z`)
+    .eq("season", season);
+  if (!rows?.length) return { ticked: true, candidates: 0 };
+
+  const now = Date.now();
+  // النوافذ الزمنية (كلها مغلقة — بعد انقضائها لا يُلمس شيء، فلا محاولات لا نهائية):
+  //  • التشكيلة: حول البداية (±10د) أو بعد النهاية [95,135]
+  //  • الإحصائيات/الأحداث: بعد الشوط الأول [55,72] + بعد النهاية [95,135]
+  //  • التقييمات: بعد النهاية فقط [95,135]
+  const win = (r: AnyRow) => {
+    const ko = r.kickoff_at ? new Date(r.kickoff_at).getTime() : null;
+    if (ko == null) return null;
+    const mins = (now - ko) / 60000;
+    const isFT = r.status_short === "FT";
+    return {
+      ko, mins, isFT,
+      // التشكيلة: حول البداية أو بعد النهاية بقليل
+      lineup: (mins >= -10 && mins <= 10) || (isFT && mins >= 95 && mins <= 135),
+      halftime: mins >= 55 && mins <= 72,                  // بعد الشوط الأول
+      statsFT: isFT && mins >= 95 && mins <= 170,           // بعد النهاية (الإحصائيات/التقييمات تتوفر بسرعة)
+      // الأحداث قد ينشرها المصدر متأخراً — نافذة أوسع بسقف صارم على المحاولات
+      eventsFT: isFT && mins >= 95 && mins <= 300,
+    };
+  };
+  const candidates = rows.filter((r: AnyRow) => { const w = win(r); return w && (w.lineup || w.halftime || w.statsFT || w.eventsFT); });
+
+  const out = { lineups: 0, stats: 0, events: 0, ratings: 0 };
+  const hit = (e: unknown) => String(e).includes("BUDGET_EXCEEDED");
+  // هل تم جلب نوع معيّن بعد النهاية فعلاً؟ (طابعه الزمني بعد الانطلاق بـ90 دقيقة)
+  const ftDone = (present: boolean, stamp: string | null | undefined, ko: number) =>
+    present && !!stamp && new Date(stamp).getTime() > ko + 90 * 60_000;
+
+  for (const r of candidates) {
+    const fid = String(r.api_fixture_id);
+    const w = win(r)!;
+    const { data: det } = await supabase.from("football_match_details")
+      .select("lineups,statistics,events,last_statistics_sync_at,last_events_sync_at").eq("provider", provider).eq("api_fixture_id", fid).maybeSingle();
+    const statsPresent = Array.isArray(det?.statistics) && det.statistics.length > 0;
+    const eventsPresent = Array.isArray(det?.events) && det.events.length > 0;
+    const ratingsPresent = Array.isArray(det?.lineups)
+      && det.lineups.some((s: AnyRow) => (s.startXI ?? []).some((p: AnyRow) => p?.player?.rating != null));
+    // «أُنجز بعد النهاية»: حتى نلتقط أرقام/أحداث المباراة الكاملة لا الشوط الأول فقط، ثم نتوقف
+    const statsFtDone = ftDone(statsPresent, det?.last_statistics_sync_at, w.ko);
+    const eventsFtDone = ftDone(eventsPresent, det?.last_events_sync_at, w.ko);
+
+    try {
+      // ── التشكيلة: حتى تتوفر رسمياً ──
+      if (w.lineup && !hasOfficialLineup(det) && await claimSync(`lineup:${fid}`, "attempt", 14, null)) {
+        const raw = await sportGet(`/api/flashscore/match/${fid}/lineups`, true);
+        const lu = normalizeLineups(raw);
+        const hasNames = lu.some((s: AnyRow) => (s.startXI ?? []).some((p: AnyRow) => p?.player?.name));
+        const patch: AnyRow = { last_lineups_sync_at: new Date().toISOString() };
+        if (hasNames) { patch.lineups = lu; out.lineups++; }
+        await upsertDetails(fid, patch);
+      }
+
+      // ── الإحصائيات: بعد الشوط الأول + بعد النهاية حتى تُلتقط النهائية (سقف ~كل 18د) ──
+      if ((w.halftime || (w.statsFT && !statsFtDone)) && await claimSync(`st:${fid}`, "attempt", 18, null)) {
+        const fresh = normalizeStatistics(await sportGet(`/api/flashscore/match/${fid}/stats`, true), r);
+        if (fresh.length || !statsPresent) { await upsertDetails(fid, { statistics: fresh, last_statistics_sync_at: new Date().toISOString() }); if (fresh.length) out.stats++; }
+      }
+
+      // ── الأحداث: بعد الشوط الأول + نافذة أوسع بعد النهاية (المصدر يتأخر)، سقف ~كل 30د ──
+      if ((w.halftime || (w.eventsFT && !eventsFtDone)) && await claimSync(`ev:${fid}`, "attempt", 30, null)) {
+        const detRaw = await sportGet(`/api/flashscore/match/${fid}/details`, true);
+        const ev = normalizeEvents(detRaw, r);
+        const patch: AnyRow = { last_events_sync_at: new Date().toISOString() };
+        if (ev.length || !eventsPresent) { patch.events = ev; if (ev.length) out.events++; }
+        if (detRaw && (detRaw.referee || detRaw.venue)) patch.extra_info = { referee: detRaw.referee ?? null, venue: detRaw.venue ?? null, venueCity: detRaw.venueCity ?? null, attendance: detRaw.attendance ?? null };
+        await upsertDetails(fid, patch);
+      }
+
+      // ── التقييمات (+ مراكز البدلاء): بعد النهاية فقط حتى تتوفر ──
+      if (w.statsFT && !ratingsPresent && await claimSync(`rt:${fid}`, "attempt", 18, null)) {
+        const psRaw = await sportGet(`/api/flashscore/match/${fid}/playerstats`, true);
+        const ratings = collectRatings(psRaw);
+        const positions = collectPositions(psRaw);
+        const base = det?.lineups;
+        if ((Object.keys(ratings).length || Object.keys(positions).length) && Array.isArray(base) && base.length) {
+          await upsertDetails(fid, { lineups: applyRatings(base, ratings, positions), last_player_stats_sync_at: new Date().toISOString() });
+          if (Object.keys(ratings).length) out.ratings++;
+        } else {
+          await upsertDetails(fid, { last_player_stats_sync_at: new Date().toISOString() });
+        }
+      }
+    } catch (e) {
+      if (hit(e)) break; // نفدت الميزانية — نتوقف بهدوء، التشغيل التالي يكمل
+    }
+  }
+  return { ticked: true, candidates: candidates.length, ...out };
+}
+
 async function handleAction(body: AnyRow, token: string | null = null) {
   const action = body.action ?? "refresh";
   if (action === "probe" && body.key === "dbg2026") {
     const payload = await sportGet(String(body.path), true).catch((e) => ({ error: String(e) }));
     return { ok: true, result: payload };
   }
+  if (action === "cron-tick") return { ok: true, result: await cronTick() };
   if (action === "admin-set-password") return await adminSetPassword(body, token);
   if (action === "refresh") return { ok: true, result: await refreshFixtures(Boolean(body.force)) };
   if (action === "match-details") return { ok: true, result: await refreshMatchDetails(String(body.fixtureId), Boolean(body.force)) };
