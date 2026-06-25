@@ -9,12 +9,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="WC 2026">
 <meta name="theme-color" content="#020b1c">
-<link rel="manifest" href="manifest.json?v=20260626-v22">
+<link rel="manifest" href="manifest.json?v=20260626-v23">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
 if("serviceWorker" in navigator){
   window.addEventListener("load",function(){
-    navigator.serviceWorker.register("sw.js?v=20260626-v22").then(function(reg){
+    navigator.serviceWorker.register("sw.js?v=20260626-v23").then(function(reg){
       if(reg&&reg.update) reg.update();
     }).catch(function(){});
   });
@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v22-20260626";
+const APP_VERSION = "v23-20260626";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -1043,7 +1043,7 @@ function HomeTab({profile,myPts,matches,myPreds,favs,myChamp,teams,champLock,liv
                 </div>
                 <div style={{textAlign:"center",flexShrink:0}}>
                   <div style={{fontSize:11.5,color:C.red,fontWeight:900}}>● مباشر{lv&&lv.status&&lv.status.elapsed!=null?" "+lv.status.elapsed+"'":""}</div>
-                  <div style={{background:"rgba(0,0,0,.3)",border:"1px solid "+C.redBdr,borderRadius:8,padding:"2px 10px",fontSize:15,fontWeight:900,color:"#fff",direction:"ltr",fontFamily:"Arial,sans-serif"}}>{s1} - {s2}</div>
+                  <div style={{background:"rgba(0,0,0,.3)",border:"1px solid "+C.redBdr,borderRadius:8,padding:"2px 10px",fontSize:15,fontWeight:900,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",gap:5,fontFamily:"Arial,sans-serif"}}><span>{s1}</span><span>-</span><span>{s2}</span></div>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8,flex:1,justifyContent:"flex-end",minWidth:0}}>
                   <span style={{fontSize:12.5,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.team2&&m.team2.name_ar}</span>
@@ -1615,7 +1615,8 @@ function BoardTab({leaderboard,profile,matches,teams}) {
     q(sb.from("predictions").select("*").eq("user_id",sel.id)).then(function(r){
       if(!alive) return;
       const rows=(r.data||[]).map(function(p){return {pred:p,match:matches.find(function(x){return x.id===p.match_id;})};})
-        .filter(function(x){return x.match && x.match.status==="finished";});
+        .filter(function(x){return x.match && x.match.status==="finished";})
+        .sort(function(a,b){return new Date(a.match.match_utc)-new Date(b.match.match_utc);}); // ترتيب حسب توقيت المباراة
       setSelPreds(rows);
     });
     return function(){alive=false;};
