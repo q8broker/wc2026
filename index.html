@@ -9,12 +9,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="WC 2026">
 <meta name="theme-color" content="#020b1c">
-<link rel="manifest" href="manifest.json?v=20260615-v21">
+<link rel="manifest" href="manifest.json?v=20260626-v22">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
 if("serviceWorker" in navigator){
   window.addEventListener("load",function(){
-    navigator.serviceWorker.register("sw.js?v=20260615-v21").then(function(reg){
+    navigator.serviceWorker.register("sw.js?v=20260626-v22").then(function(reg){
       if(reg&&reg.update) reg.update();
     }).catch(function(){});
   });
@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v21-20260615";
+const APP_VERSION = "v22-20260626";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -577,7 +577,7 @@ function AuthScr({onSuccess}) {
 function MainApp({profile,setProfile,tab,setTab,signOut}) {
   const [matches,   setMatches]    = useState([]);
   const [myPreds,   setMyPreds]    = useState({});
-  const [allPreds,  setAllPreds]   = useState([]);
+  const [board,     setBoard]      = useState([]);
   const [allChamp,  setAllChamp]   = useState([]);
   const [myChamp,   setMyChamp]    = useState(null);
   const [champWin,  setChampWin]   = useState("");
@@ -675,11 +675,11 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
 
   const loadAll = async () => {
     try {
-      const [tRes,mRes,mpRes,apRes,fRes,cpRes,acpRes,prRes,r16Res,setRes] = await Promise.all([
+      const [tRes,mRes,mpRes,lbRes,fRes,cpRes,acpRes,prRes,r16Res,setRes] = await Promise.all([
         q(sb.from("teams").select("*")),
         q(sb.from("matches").select("*").order("match_utc")),
         q(sb.from("predictions").select("*").eq("user_id",profile.id)),
-        q(sb.from("predictions").select("*")),
+        q(sb.rpc("leaderboard")),                                  // الترتيب يُحسب في السيرفر (لا سحب كل التوقعات)
         q(sb.from("favorites").select("team_id").eq("user_id",profile.id)),
         q(sb.from("champion_predictions").select("*").eq("user_id",profile.id).maybeSingle()),
         q(sb.from("champion_predictions").select("*")),
@@ -704,7 +704,7 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
         setMyPreds(mp);
       }
 
-      if(apRes.data) setAllPreds(apRes.data);
+      if(lbRes.data) setBoard(lbRes.data);
       if(fRes.data) setFavs(new Set(fRes.data.map(function(x){return x.team_id;})));
       setMyChamp(cpRes.data||null);
       if(acpRes.data) setAllChamp(acpRes.data);
@@ -741,23 +741,12 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
 
   const leaderboard = useMemo(function(){
     try {
-      const byUser={};
-      allPreds.forEach(function(p){
-        if(!byUser[p.user_id]) byUser[p.user_id]=[];
-        byUser[p.user_id].push(p);
-      });
-      return profiles.map(function(pr){
-        let pts=0;
-        (byUser[pr.id]||[]).forEach(function(pred){
-          const match=matches.find(function(m){return m.id===pred.match_id;});
-          if(match) pts+=(calcPts(pred,match)||0);
-        });
-        const cp=allChamp.find(function(c){return c.user_id===pr.id;});
-        if(cp && champWin && cp.team_id===champWin) pts+=15;
-        return Object.assign({},pr,{pts:pts,predCount:(byUser[pr.id]||[]).length});
+      // النقاط محسوبة في السيرفر عبر دالة leaderboard() — نعيد تشكيلها فقط
+      return (board||[]).map(function(r){
+        return {id:r.user_id, display_name:r.display_name, username:r.username, pts:r.points||0, predCount:r.pred_count||0};
       }).sort(function(a,b){return b.pts-a.pts;});
     } catch(e){ return []; }
-  }, [profiles,allPreds,matches,allChamp,champWin]);
+  }, [board]);
 
   const toggleFav = async (id) => {
     const nf = new Set(favs);
@@ -919,7 +908,7 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
         {tab==="grps"  && <GroupsTab matches={matches} teams={teams} favs={favs} toggleFav={toggleFav} myChamp={myChamp} saveChampion={saveChampion} champLock={champLock} liveMap={liveMap} onTeamMatches={function(id){setTeamMatchFilter(id);setMatchFlt("all");setTab("match");}}/>}
         {tab==="match" && <MatchesTab matches={matches} myPreds={myPreds} savePred={savePred} matchFlt={matchFlt} setMatchFlt={setMatchFlt} teamFilter={teamMatchFilter} setTeamFilter={setTeamMatchFilter} liveMap={liveMap} onOpen={setPopup}/>}
         {tab==="knock" && <KnockTab matches={matches.filter(function(m){return m.stage&&m.stage!=="group";})} allMatches={matches} teams={teams} myPreds={myPreds} liveMap={liveMap} onOpen={setPopup}/>}
-        {tab==="board" && <BoardTab leaderboard={leaderboard} profile={profile} allPreds={allPreds} matches={matches}/>}
+        {tab==="board" && <BoardTab leaderboard={leaderboard} profile={profile} matches={matches} teams={teams}/>}
         {tab==="me"    && <ProfileTab profile={profile} setProfile={setProfile} myPts={myPts} predCount={Object.keys(myPreds).length} favCount={favs.size} myChamp={myChamp} teams={teams}/>}
         {tab==="admin" && <AdminTab pending={pending} matches={matches} teams={teams} approveUser={approveUser} setResult={setResult} champWin={champWin} setChampWinner={setChampWinner} syncAPI={syncAPI} pullResults={pullResults} applyResults={applyResults} appSettings={appSettings} toggleSetting={toggleSetting} members={profiles}/>}
       </main>
@@ -938,7 +927,7 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
         </div>
       )}
 
-      {popup && <MatchPopup match={popup} myPred={myPreds[popup.id]} allPreds={allPreds} profiles={profiles} savePred={savePred} liveData={liveFor(popup,liveMap)} onClose={function(){setPopup(null);}}/>}
+      {popup && <MatchPopup match={popup} myPred={myPreds[popup.id]} profiles={profiles} savePred={savePred} liveData={liveFor(popup,liveMap)} onClose={function(){setPopup(null);}}/>}
     </div>
   );
 }
@@ -1615,13 +1604,23 @@ function KnockTab({matches,allMatches,teams,myPreds,liveMap,onOpen}) {
 }
 
 /* ═══════════════ LEADERBOARD ══════════════════════════════════ */
-function BoardTab({leaderboard,profile,allPreds,matches}) {
+function BoardTab({leaderboard,profile,matches,teams}) {
   const medals=["🥇","🥈","🥉"];
   const [sel,setSel] = useState(null);
-  const visiblePreds = sel ? (allPreds||[]).filter(function(p){
-    const m=matches.find(function(x){return x.id===p.match_id;});
-    return p.user_id===sel.id && m && m.status==="finished";
-  }).map(function(p){return {pred:p,match:matches.find(function(x){return x.id===p.match_id;})};}) : [];
+  const [selPreds,setSelPreds] = useState(null); // توقعات العضو المختار — تُسحب عند الضغط فقط
+  // عند اختيار عضو: اسحب توقعاته للمباريات المنتهية فقط (ديناميكياً، لا سحب للكل)
+  useEffect(function(){
+    if(!sel){ setSelPreds(null); return; }
+    let alive=true; setSelPreds(null);
+    q(sb.from("predictions").select("*").eq("user_id",sel.id)).then(function(r){
+      if(!alive) return;
+      const rows=(r.data||[]).map(function(p){return {pred:p,match:matches.find(function(x){return x.id===p.match_id;})};})
+        .filter(function(x){return x.match && x.match.status==="finished";});
+      setSelPreds(rows);
+    });
+    return function(){alive=false;};
+  },[sel&&sel.id]);
+  const visiblePreds = selPreds||[];
   return (
     <div>
       <div style={{fontSize:15,fontWeight:700,marginBottom:14,textAlign:"center",color:C.gold}}>🏆 جدول الترتيب · نقاط لحظية</div>
@@ -1664,7 +1663,8 @@ function BoardTab({leaderboard,profile,allPreds,matches}) {
               </div>
               <button onClick={function(){setSel(null);}} style={{background:"rgba(255,255,255,.08)",border:"none",borderRadius:9,width:32,height:32,color:C.sub}}>x</button>
             </div>
-            {visiblePreds.length===0&&<div style={{textAlign:"center",padding:28,color:C.sub}}>لا توجد توقعات مكشوفة بعد</div>}
+            {selPreds===null&&<div style={{textAlign:"center",padding:28,color:C.sub}}>جاري التحميل...</div>}
+            {selPreds!==null&&visiblePreds.length===0&&<div style={{textAlign:"center",padding:28,color:C.sub}}>لا توجد توقعات مكشوفة بعد</div>}
             {visiblePreds.map(function(row){
               const p=row.pred,m=row.match,pts=calcPts(p,m)||0;
               return (
@@ -1988,7 +1988,7 @@ function AdminTab({pending,matches,teams,approveUser,setResult,champWin,setChamp
 }
 
 /* ═══════════════ MATCH POPUP ══════════════════════════════════ */
-function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) {
+function MatchPopup({match,myPred,profiles,savePred,liveData,onClose}) {
   const [p1,setP1] = useState(myPred!=null?String(myPred.pred_team1):"");
   const [p2,setP2] = useState(myPred!=null?String(myPred.pred_team2):"");
   const [busy,setBusy] = useState(false);
@@ -2101,7 +2101,16 @@ function MatchPopup({match,myPred,allPreds,profiles,savePred,liveData,onClose}) 
       style={{width:50,height:50,textAlign:"center",fontSize:22,fontWeight:900,background:"rgba(255,255,255,.1)",border:"1px solid "+(locked||finished||isPlaceholder?C.border:C.gold),borderRadius:12,color:C.text,fontFamily:"inherit",outline:"none"}}/>
   );};
 
-  const matchPreds=(allPreds||[]).filter(function(p){return p.match_id===match.id;});
+  // توقعات هذه المباراة تُسحب ديناميكياً عند فتح البوب اب (تظهر بعد الصافرة فقط حسب صلاحيات السيرفر)
+  const [matchPreds,setMatchPreds] = useState([]);
+  useEffect(function(){
+    if(!valid||!match.id||match.is_placeholder) return;
+    let alive=true;
+    q(sb.from("predictions").select("user_id,pred_team1,pred_team2").eq("match_id",match.id)).then(function(r){
+      if(alive && r.data) setMatchPreds(r.data);
+    });
+    return function(){alive=false;};
+  },[match&&match.id]);
   const profileName=function(uid){
     const p=(profiles||[]).find(function(x){return x.id===uid;});
     return p ? (p.display_name||p.username||"مشارك") : "مشارك";
