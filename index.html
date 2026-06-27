@@ -9,12 +9,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="WC 2026">
 <meta name="theme-color" content="#020b1c">
-<link rel="manifest" href="manifest.json?v=20260626-v24">
+<link rel="manifest" href="manifest.json?v=20260626-v25">
 <link rel="apple-touch-icon" href="icon-192.png">
 <script>
 if("serviceWorker" in navigator){
   window.addEventListener("load",function(){
-    navigator.serviceWorker.register("sw.js?v=20260626-v24").then(function(reg){
+    navigator.serviceWorker.register("sw.js?v=20260626-v25").then(function(reg){
       if(reg&&reg.update) reg.update();
     }).catch(function(){});
   });
@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v24-20260626";
+const APP_VERSION = "v25-20260626";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -930,8 +930,8 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
       <main className="fu" key={tab} style={{padding:"0 14px",paddingTop:16}}>
         {tab==="home"  && <HomeTab profile={profile} myPts={myPts} matches={matches} myPreds={myPreds} favs={favs} myChamp={myChamp} teams={teams} champLock={champLock} liveMap={liveMap} jokerUsed={jokerUsed} onOpen={setPopup}/>}
         {tab==="grps"  && <GroupsTab matches={matches} teams={teams} favs={favs} toggleFav={toggleFav} myChamp={myChamp} saveChampion={saveChampion} champLock={champLock} liveMap={liveMap} onTeamMatches={function(id){setTeamMatchFilter(id);setMatchFlt("all");setTab("match");}}/>}
-        {tab==="match" && <MatchesTab matches={matches} myPreds={myPreds} savePred={savePred} matchFlt={matchFlt} setMatchFlt={setMatchFlt} teamFilter={teamMatchFilter} setTeamFilter={setTeamMatchFilter} liveMap={liveMap} onOpen={setPopup}/>}
-        {tab==="knock" && <KnockTab matches={matches.filter(function(m){return m.stage&&m.stage!=="group";})} allMatches={matches} teams={teams} myPreds={myPreds} liveMap={liveMap} onOpen={setPopup}/>}
+        {tab==="match" && <MatchesTab matches={matches} myPreds={myPreds} savePred={savePred} matchFlt={matchFlt} setMatchFlt={setMatchFlt} teamFilter={teamMatchFilter} setTeamFilter={setTeamMatchFilter} liveMap={liveMap} jokerUsed={jokerUsed} onOpen={setPopup}/>}
+        {tab==="knock" && <KnockTab matches={matches.filter(function(m){return m.stage&&m.stage!=="group";})} allMatches={matches} teams={teams} myPreds={myPreds} liveMap={liveMap} savePred={savePred} jokerUsed={jokerUsed} onOpen={setPopup}/>}
         {tab==="board" && <BoardTab leaderboard={leaderboard} profile={profile} matches={matches} teams={teams}/>}
         {tab==="me"    && <ProfileTab profile={profile} setProfile={setProfile} myPts={myPts} predCount={Object.keys(myPreds).length} favCount={favs.size} myChamp={myChamp} teams={teams}/>}
         {tab==="admin" && <AdminTab pending={pending} matches={matches} teams={teams} approveUser={approveUser} setResult={setResult} champWin={champWin} setChampWinner={setChampWinner} syncAPI={syncAPI} pullResults={pullResults} applyResults={applyResults} appSettings={appSettings} toggleSetting={toggleSetting} members={profiles}/>}
@@ -1242,7 +1242,7 @@ function GroupsTab({matches,teams,favs,toggleFav,myChamp,saveChampion,champLock,
 }
 
 /* ═══════════════ MATCHES TAB ══════════════════════════════════ */
-function MatchesTab({matches,myPreds,savePred,matchFlt,setMatchFlt,teamFilter,setTeamFilter,liveMap,onOpen}) {
+function MatchesTab({matches,myPreds,savePred,matchFlt,setMatchFlt,teamFilter,setTeamFilter,liveMap,jokerUsed,onOpen}) {
   const [arabOnly,setArabOnly] = useState(false);
 
   const isCurrent = function(m){
@@ -1288,7 +1288,7 @@ function MatchesTab({matches,myPreds,savePred,matchFlt,setMatchFlt,teamFilter,se
               <div style={{fontSize:12.5,color:C.sub}}>{fw(kd2)}</div>
               <div style={{flex:1,height:1,background:C.border}}/>
             </div>
-            {byDate[d].map(function(m){return <MatchRow key={m.id} match={m} pred={myPreds[m.id]} savePred={savePred} live={liveFor(m,liveMap)} onOpen={onOpen}/>;})
+            {byDate[d].map(function(m){return <MatchRow key={m.id} match={m} pred={myPreds[m.id]} savePred={savePred} live={liveFor(m,liveMap)} jokerUsed={jokerUsed} onOpen={onOpen}/>;})
             }
           </div>
         );
@@ -1298,18 +1298,25 @@ function MatchesTab({matches,myPreds,savePred,matchFlt,setMatchFlt,teamFilter,se
 }
 
 /* ═══════════════ MATCH ROW ════════════════════════════════════ */
-function MatchRow({match,pred,savePred,live,onOpen}) {
+function MatchRow({match,pred,savePred,live,onOpen,jokerUsed}) {
   const [p1,setP1] = useState(pred!=null?String(pred.pred_team1):"");
   const [p2,setP2] = useState(pred!=null?String(pred.pred_team2):"");
+  const [joker,setJoker] = useState(Boolean(pred&&pred.is_joker));
   const [busy,setBusy] = useState(false);
   const [ok,setOk] = useState(false);
   const [errMsg,setErrMsg] = useState("");
 
-  useEffect(function(){ if(pred!=null){setP1(String(pred.pred_team1));setP2(String(pred.pred_team2));} },[pred]);
+  useEffect(function(){ if(pred!=null){setP1(String(pred.pred_team1));setP2(String(pred.pred_team2));setJoker(Boolean(pred.is_joker));} },[pred]);
 
   const locked=isLocked(match.match_utc), finished=match.status==="finished";
   const kd=LD(match.match_utc), pts=pred?calcPts(pred,match):null;
   const canSave=!busy&&p1!==""&&p2!=="";
+  // الجوكر (للإقصائيات فقط)
+  const jGrp=jokerGroup(match.stage);
+  const jLimit=jGrp?JOKER_LIMIT[jGrp]:0;
+  const jUsedOther=(jGrp&&jokerUsed?jokerUsed[jGrp]:0)-((pred&&pred.is_joker&&jGrp)?1:0);
+  const jRemain=jLimit-jUsedOther;
+  const canJoker=jGrp&&!finished&&!locked&&(joker||jRemain>0);
 
   const lvShort=live&&live.status&&live.status.short;
   const lvNow=!finished&&isLiveShort(lvShort);
@@ -1323,7 +1330,7 @@ function MatchRow({match,pred,savePred,live,onOpen}) {
     e.stopPropagation();
     if(!canSave) return;
     setBusy(true);
-    const res=await savePred(match.id,p1,p2);
+    const res=await savePred(match.id,p1,p2,jGrp?joker:undefined);
     setBusy(false);
     if(res&&res.success){setOk(true);setTimeout(function(){setOk(false);},2500);}
     else if(res&&res.error){setErrMsg(res.error);setTimeout(function(){setErrMsg("");},4000);}
@@ -1377,19 +1384,27 @@ function MatchRow({match,pred,savePred,live,onOpen}) {
         </div>
       )}
       <div style={{marginTop:8,textAlign:"center",fontSize:11.5,color:C.blue,fontWeight:900}}>اضغط على البطاقة لفتح التفاصيل</div>
+      {jGrp&&!finished&&!locked&&(
+        <div onClick={function(e){e.stopPropagation(); if(canJoker) setJoker(!joker);}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:joker?C.goldBg:"rgba(255,255,255,.04)",border:"1px solid "+(joker?C.goldBdr:C.border),borderRadius:10,padding:"7px 10px",marginTop:9,cursor:canJoker?"pointer":"not-allowed",opacity:canJoker?1:0.55}}>
+          <span style={{fontSize:11.5,fontWeight:800,color:joker?C.gold:C.sub}}>🃏 جوكر (نقاط ×2) · متبقٍ {jRemain}</span>
+          <div style={{width:40,height:22,borderRadius:999,background:joker?C.gold:"rgba(255,255,255,.12)",position:"relative",flexShrink:0}}>
+            <div style={{position:"absolute",top:3,[joker?"right":"left"]:3,width:16,height:16,borderRadius:"50%",background:"#fff"}}/>
+          </div>
+        </div>
+      )}
       {!finished&&!locked&&(
         <button onClick={doSave} disabled={!canSave} style={{width:"100%",marginTop:9,padding:"8px",background:ok?C.greenBg:C.goldBg,border:"1px solid "+(ok?C.greenBdr:C.goldBdr),borderRadius:10,color:ok?C.green:C.gold,fontSize:13.5,fontWeight:700,cursor:canSave?"pointer":"not-allowed",fontFamily:"inherit",opacity:canSave?1:0.5}}>
-          {ok?"✅ تم":busy?"...":pred?"🔄 تحديث":"💾 حفظ"}
+          {ok?"✅ تم":busy?"...":pred?"🔄 تحديث":"💾 حفظ"}{joker?" 🃏":""}
         </button>
       )}
-      {!finished&&locked&&<div style={{marginTop:8,textAlign:"center",fontSize:11.5,color:pred?C.gold:C.dim}}>{pred?"🔒 توقعك: "+pred.pred_team1+"-"+pred.pred_team2:"🔒 انتهى وقت التوقع"}</div>}
+      {!finished&&locked&&<div style={{marginTop:8,textAlign:"center",fontSize:11.5,color:pred?C.gold:C.dim}}>{pred?"🔒 توقعك: "+pred.pred_team1+"-"+pred.pred_team2+(pred.is_joker?" 🃏":""):"🔒 انتهى وقت التوقع"}</div>}
       {errMsg&&<div style={{marginTop:6,textAlign:"center",fontSize:12.5,color:C.red,fontWeight:700}}>{errMsg}</div>}
     </div>
   );
 }
 
 /* ═══════════════ KNOCKOUT TAB ═════════════════════════════════ */
-function KnockTab({matches,allMatches,teams,myPreds,liveMap,onOpen}) {
+function KnockTab({matches,allMatches,teams,myPreds,liveMap,savePred,jokerUsed,onOpen}) {
   const SO=["R32","R16","QF","SF","TH","F"];
   const PLAN={
     R32:[
@@ -1481,7 +1496,16 @@ function KnockTab({matches,allMatches,teams,myPreds,liveMap,onOpen}) {
     const t1=slotTeam(x.a), t2=slotTeam(x.b);
     return {id:"ko-"+x.no,is_placeholder:true,stage:stage,match_no:x.no,match_utc:x.date,status:"scheduled",venue:x.venue,team1_id:t1.id,team2_id:t2.id,team1:t1,team2:t2,slot_a:x.a,slot_b:x.b};
   };
-  const stageList=function(s){return (bys[s]&&bys[s].length?bys[s]:PLAN[s].map(function(x){return toSynthetic(x,s);}));};
+  /* دمج: المباريات الحقيقية تحل محل معايناتها (بالترتيب الزمني)، وتبقى المعاينات للمقاعد التي لم تُعتمد بعد */
+  const stageList=function(s){
+    const synth = PLAN[s].map(function(x){return toSynthetic(x,s);});
+    const real = (bys[s]||[]).slice().sort(function(a,b){return new Date(a.match_utc)-new Date(b.match_utc);});
+    if(real.length){
+      const synthSorted = synth.slice().sort(function(a,b){return new Date(a.match_utc)-new Date(b.match_utc);});
+      real.forEach(function(rm,i){ if(synthSorted[i]) synthSorted[i].real = rm; });
+    }
+    return synth.map(function(sy){ return sy.real || sy; });
+  };
   const [viewMode,setViewMode] = useState("tree"); // tree (شجرة هرمية) | chrono (زمني)
   const [chronoStage,setChronoStage] = useState("all"); // فلتر الدور في العرض الزمني
   const curMatches = SO.flatMap(stageList)
@@ -1606,6 +1630,10 @@ function KnockTab({matches,allMatches,teams,myPreds,liveMap,onOpen}) {
         const finished=m.status==="finished";
         const lv=liveFor(m,liveMap);
         const lvNow=!finished&&lv&&lv.status&&isLiveShort(lv.status.short);
+        // المباريات الحقيقية (المعتمدة) تُعرض كبطاقة مباريات كاملة: توقع + جوكر inline
+        if(!m.is_placeholder){
+          return <MatchRow key={m.id} match={m} pred={myPreds[m.id]} savePred={savePred} live={lv} jokerUsed={jokerUsed} onOpen={onOpen}/>;
+        }
         return (
           <React.Fragment key={m.id}>
           <div onClick={function(){onOpen(m);}} style={{position:"relative",background:finished?"rgba(255,255,255,.02)":C.card,border:"1px solid "+(finished?C.border:C.blueBdr),borderRadius:16,padding:"12px 14px",marginBottom:10,cursor:"pointer",boxShadow:m.is_placeholder?"inset 0 0 0 1px rgba(255,255,255,.02)":"0 8px 22px rgba(34,208,122,.08)"}}>
