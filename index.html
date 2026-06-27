@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v25-20260626";
+const APP_VERSION = "v26-20260628";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -344,6 +344,17 @@ function Btn({onClick,children,color="gold",disabled,full,style:s}) {
       {children}
     </button>
   );
+}
+
+/* ═══════════════════════ حاجز الأخطاء (يمنع انهيار الصفحة كاملة) ═══════════════════════ */
+class Boundary extends React.Component {
+  constructor(p){ super(p); this.state={n:0,err:false}; }
+  static getDerivedStateFromError(){ return {err:true}; }
+  componentDidCatch(){ /* نعيد التركيب تلقائياً بدل ترك الصفحة بيضاء */ var self=this; setTimeout(function(){ self.setState(function(s){return {err:false,n:s.n+1};}); },50); }
+  render(){
+    if(this.state.err) return React.createElement("div",{style:{padding:24,textAlign:"center",color:C.sub,fontSize:13}},"… جارٍ التحديث");
+    return React.createElement(React.Fragment,{key:this.state.n}, this.props.children);
+  }
 }
 
 /* ═══════════════════════ APP ROOT ═══════════════════════════ */
@@ -782,17 +793,22 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
   };
 
   const savePred = async (matchId, t1, t2, joker) => {
-    const v1=parseInt(t1,10), v2=parseInt(t2,10);
-    if(isNaN(v1)||isNaN(v2)||v1<0||v2<0||v1>20||v2>20) return {success:false,error:"أدخل نتيجة صحيحة (0-20)"};
-    // joker=undefined يعني «أبقِ الحالة كما هي» (المستدعون العاديون لا يعرفون الجوكر)
-    const cur = myPreds[matchId];
-    const jokerVal = (joker===undefined) ? Boolean(cur&&cur.is_joker) : Boolean(joker);
-    const res = await q(sb.rpc("save_prediction",{p_match_id:matchId,p_pred_team1:v1,p_pred_team2:v2,p_joker:jokerVal}));
-    if(res.data && res.data.error) return {success:false,error:res.data.error};
-    if(res.error) return {success:false,error:"تعذر الحفظ، حاول مرة ثانية"};
-    const pr2 = await q(sb.from("predictions").select("*").eq("user_id",profile.id).eq("match_id",matchId).maybeSingle());
-    if(pr2.data) setMyPreds(function(prev){const n=Object.assign({},prev);n[matchId]=pr2.data;return n;});
-    return {success:true};
+    try {
+      const v1=parseInt(t1,10), v2=parseInt(t2,10);
+      if(isNaN(v1)||isNaN(v2)||v1<0||v2<0||v1>20||v2>20) return {success:false,error:"أدخل نتيجة صحيحة (0-20)"};
+      // joker=undefined يعني «أبقِ الحالة كما هي» (المستدعون العاديون لا يعرفون الجوكر)
+      const cur = myPreds[matchId];
+      const jokerVal = (joker===undefined) ? Boolean(cur&&cur.is_joker) : Boolean(joker);
+      const res = await q(sb.rpc("save_prediction",{p_match_id:matchId,p_pred_team1:v1,p_pred_team2:v2,p_joker:jokerVal}));
+      if(res.data && res.data.error) return {success:false,error:res.data.error};
+      if(res.error) return {success:false,error:"تعذر الحفظ، حاول مرة ثانية"};
+      const pr2 = await q(sb.from("predictions").select("*").eq("user_id",profile.id).eq("match_id",matchId).maybeSingle());
+      if(pr2 && pr2.data) setMyPreds(function(prev){const n=Object.assign({},prev);n[matchId]=pr2.data;return n;});
+      return {success:true};
+    } catch(err) {
+      console.error("savePred error", err);
+      return {success:false,error:"تعذر الحفظ، حاول مرة ثانية"};
+    }
   };
 
   const saveChampion = async (teamId) => {
@@ -928,6 +944,7 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
       </header>
 
       <main className="fu" key={tab} style={{padding:"0 14px",paddingTop:16}}>
+        <Boundary>
         {tab==="home"  && <HomeTab profile={profile} myPts={myPts} matches={matches} myPreds={myPreds} favs={favs} myChamp={myChamp} teams={teams} champLock={champLock} liveMap={liveMap} jokerUsed={jokerUsed} onOpen={setPopup}/>}
         {tab==="grps"  && <GroupsTab matches={matches} teams={teams} favs={favs} toggleFav={toggleFav} myChamp={myChamp} saveChampion={saveChampion} champLock={champLock} liveMap={liveMap} onTeamMatches={function(id){setTeamMatchFilter(id);setMatchFlt("all");setTab("match");}}/>}
         {tab==="match" && <MatchesTab matches={matches} myPreds={myPreds} savePred={savePred} matchFlt={matchFlt} setMatchFlt={setMatchFlt} teamFilter={teamMatchFilter} setTeamFilter={setTeamMatchFilter} liveMap={liveMap} jokerUsed={jokerUsed} onOpen={setPopup}/>}
@@ -935,6 +952,7 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
         {tab==="board" && <BoardTab leaderboard={leaderboard} profile={profile} matches={matches} teams={teams}/>}
         {tab==="me"    && <ProfileTab profile={profile} setProfile={setProfile} myPts={myPts} predCount={Object.keys(myPreds).length} favCount={favs.size} myChamp={myChamp} teams={teams}/>}
         {tab==="admin" && <AdminTab pending={pending} matches={matches} teams={teams} approveUser={approveUser} setResult={setResult} champWin={champWin} setChampWinner={setChampWinner} syncAPI={syncAPI} pullResults={pullResults} applyResults={applyResults} appSettings={appSettings} toggleSetting={toggleSetting} members={profiles}/>}
+        </Boundary>
       </main>
 
       {showInst && (
@@ -951,7 +969,7 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
         </div>
       )}
 
-      {popup && <MatchPopup match={popup} myPred={myPreds[popup.id]} profiles={profiles} savePred={savePred} liveData={liveFor(popup,liveMap)} jokerUsed={jokerUsed} onClose={function(){setPopup(null);}}/>}
+      {popup && <Boundary><MatchPopup match={popup} myPred={myPreds[popup.id]} profiles={profiles} savePred={savePred} liveData={liveFor(popup,liveMap)} jokerUsed={jokerUsed} onClose={function(){setPopup(null);}}/></Boundary>}
     </div>
   );
 }
@@ -1315,8 +1333,9 @@ function MatchRow({match,pred,savePred,live,onOpen,jokerUsed}) {
   const jGrp=jokerGroup(match.stage);
   const jLimit=jGrp?JOKER_LIMIT[jGrp]:0;
   const jUsedOther=(jGrp&&jokerUsed?jokerUsed[jGrp]:0)-((pred&&pred.is_joker&&jGrp)?1:0);
-  const jRemain=jLimit-jUsedOther;
-  const canJoker=jGrp&&!finished&&!locked&&(joker||jRemain>0);
+  const jAvail=jLimit-jUsedOther;                 // متاح لهذه المباراة (بدون احتساب الزر المحلي)
+  const jRemain=jAvail-(joker?1:0);               // المتبقي بعد اختيار هذه المباراة (يتغير حياً مع الزر)
+  const canJoker=jGrp&&!finished&&!locked&&(joker||jAvail>0);
 
   const lvShort=live&&live.status&&live.status.short;
   const lvNow=!finished&&isLiveShort(lvShort);
@@ -1386,7 +1405,7 @@ function MatchRow({match,pred,savePred,live,onOpen,jokerUsed}) {
       <div style={{marginTop:8,textAlign:"center",fontSize:11.5,color:C.blue,fontWeight:900}}>اضغط على البطاقة لفتح التفاصيل</div>
       {jGrp&&!finished&&!locked&&(
         <div onClick={function(e){e.stopPropagation(); if(canJoker) setJoker(!joker);}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:joker?C.goldBg:"rgba(255,255,255,.04)",border:"1px solid "+(joker?C.goldBdr:C.border),borderRadius:10,padding:"7px 10px",marginTop:9,cursor:canJoker?"pointer":"not-allowed",opacity:canJoker?1:0.55}}>
-          <span style={{fontSize:11.5,fontWeight:800,color:joker?C.gold:C.sub}}>🃏 جوكر (نقاط ×2) · متبقٍ {jRemain}</span>
+          <span style={{fontSize:11.5,fontWeight:800,color:joker?C.gold:C.sub}}>{"🃏 جوكر (نقاط ×2) · متبقٍ "+jRemain}</span>
           <div style={{width:40,height:22,borderRadius:999,background:joker?C.gold:"rgba(255,255,255,.12)",position:"relative",flexShrink:0}}>
             <div style={{position:"absolute",top:3,[joker?"right":"left"]:3,width:16,height:16,borderRadius:"50%",background:"#fff"}}/>
           </div>
@@ -1394,7 +1413,7 @@ function MatchRow({match,pred,savePred,live,onOpen,jokerUsed}) {
       )}
       {!finished&&!locked&&(
         <button onClick={doSave} disabled={!canSave} style={{width:"100%",marginTop:9,padding:"8px",background:ok?C.greenBg:C.goldBg,border:"1px solid "+(ok?C.greenBdr:C.goldBdr),borderRadius:10,color:ok?C.green:C.gold,fontSize:13.5,fontWeight:700,cursor:canSave?"pointer":"not-allowed",fontFamily:"inherit",opacity:canSave?1:0.5}}>
-          {ok?"✅ تم":busy?"...":pred?"🔄 تحديث":"💾 حفظ"}{joker?" 🃏":""}
+          {(ok?"✅ تم":busy?"...":pred?"🔄 تحديث":"💾 حفظ")+(joker?" 🃏":"")}
         </button>
       )}
       {!finished&&locked&&<div style={{marginTop:8,textAlign:"center",fontSize:11.5,color:pred?C.gold:C.dim}}>{pred?"🔒 توقعك: "+pred.pred_team1+"-"+pred.pred_team2+(pred.is_joker?" 🃏":""):"🔒 انتهى وقت التوقع"}</div>}
@@ -2177,8 +2196,9 @@ function MatchPopup({match,myPred,profiles,savePred,liveData,jokerUsed,onClose})
   const jGrp = jokerGroup(match&&match.stage);
   const jLimit = jGrp ? JOKER_LIMIT[jGrp] : 0;
   const jUsedOther = (jGrp && jokerUsed ? jokerUsed[jGrp] : 0) - ((myPred&&myPred.is_joker&&jGrp)?1:0); // مستخدَمة بدور غير هذه المباراة
-  const jRemain = jLimit - jUsedOther;
-  const canJoker = jGrp && (joker || jRemain>0); // يقدر يفعّل لو فيه رصيد، أو يلغي المفعّل
+  const jAvail = jLimit - jUsedOther;            // متاح لهذه المباراة (بدون احتساب الزر المحلي)
+  const jRemain = jAvail - (joker?1:0);          // المتبقي بعد اختيار هذه المباراة (يتغير حياً)
+  const canJoker = jGrp && (joker || jAvail>0); // يقدر يفعّل لو فيه رصيد، أو يلغي المفعّل
 
   const numBox=function(v,set){return (
     <input type="number" inputMode="numeric" min="0" max="20" value={v} onChange={function(e){set(clampScore(e.target.value));}} disabled={locked||finished||isPlaceholder}
