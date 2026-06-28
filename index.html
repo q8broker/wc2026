@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v27-20260628";
+const APP_VERSION = "v28-20260628";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -1565,7 +1565,8 @@ function KnockTab({matches,allMatches,teams,myPreds,liveMap,savePred,jokerUsed,o
       );
     };
     return (
-      <div onClick={function(){onOpen(m);}} style={Object.assign({height:58,background:finished?"rgba(255,255,255,.03)":C.card,border:"1px solid "+(lvNow?C.redBdr:m.is_placeholder?C.border:C.blueBdr),borderRadius:10,padding:"4px 6px",cursor:"pointer",boxSizing:"border-box",overflow:"hidden"},st)}>
+      <div onClick={function(){onOpen(m);}} style={Object.assign({position:"relative",height:58,background:finished?"rgba(255,255,255,.03)":C.card,border:"1px solid "+(pred&&pred.is_joker?C.gold:lvNow?C.redBdr:m.is_placeholder?C.border:C.blueBdr),borderRadius:10,padding:"4px 6px",cursor:"pointer",boxSizing:"border-box",overflow:"hidden"},st)}>
+        {pred&&pred.is_joker&&<span style={{position:"absolute",top:-1,left:-1,background:C.gold,color:"#000",borderRadius:"0 9px 0 9px",fontSize:13,lineHeight:1,padding:"2px 5px",fontWeight:900,zIndex:2,boxShadow:"0 2px 6px rgba(0,0,0,.4)"}}>🃏</span>}
         {trow(m.team1,s1,finished&&m.result_team1>m.result_team2)}
         {trow(m.team2,s2,finished&&m.result_team2>m.result_team1)}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:8.5,color:C.dim,marginTop:1}}>
@@ -1768,11 +1769,11 @@ function BoardTab({leaderboard,profile,matches,teams}) {
               return (
                 <div key={p.id||m.id} style={{background:C.card,border:"1px solid "+C.border,borderRadius:13,padding:12,marginBottom:8}}>
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,color:C.sub,marginBottom:6}}>
-                    <span>{m.team1&&m.team1.name_ar} - {m.team2&&m.team2.name_ar} {p.is_joker&&<span style={{color:C.gold}}>🃏</span>}</span>
+                    <span>{m.team1&&m.team1.name_ar} - {m.team2&&m.team2.name_ar} {p.is_joker&&<span style={{fontSize:16,verticalAlign:"middle"}}>🃏</span>}</span>
                     <span style={{color:pts>=3?C.green:pts>=1?C.gold:C.red,fontWeight:800}}>{pts} نقطة</span>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:13.5}}>
-                    <span>توقعه: <b>{p.pred_team1} - {p.pred_team2}</b>{p.is_joker&&<span style={{color:C.gold}}> 🃏</span>}</span>
+                    <span>توقعه: <b>{p.pred_team1} - {p.pred_team2}</b>{p.is_joker&&<span style={{fontSize:18,verticalAlign:"middle",marginRight:4}}>🃏</span>}</span>
                     <span>النتيجة: <b>{m.result_team1} - {m.result_team2}</b></span>
                   </div>
                 </div>
@@ -2747,10 +2748,10 @@ function MatchPopup({match,myPred,profiles,savePred,liveData,jokerUsed,onClose})
                 return (
                   <div key={p.id||p.user_id} style={{background:C.card,border:"1px solid "+C.border,borderRadius:12,padding:"10px 12px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <div>
-                      <div style={{fontSize:13.5,fontWeight:800}}>{profileName(p.user_id)} {p.is_joker&&<span style={{color:C.gold}}>🃏</span>}</div>
+                      <div style={{fontSize:13.5,fontWeight:800,display:"flex",alignItems:"center",gap:5}}>{profileName(p.user_id)}{p.is_joker&&<span style={{fontSize:17}}>🃏</span>}</div>
                       <div style={{fontSize:11.5,color:C.sub}}>{p.pred_team1===p.pred_team2?"تعادل":p.pred_team1>p.pred_team2?(match.team1&&match.team1.name_ar):(match.team2&&match.team2.name_ar)}</div>
                     </div>
-                    <div style={{fontSize:18,fontWeight:900,color:side,display:"flex",alignItems:"center",gap:4}}>{p.is_joker&&<span style={{fontSize:15,color:C.gold}}>🃏</span>}{p.pred_team1} - {p.pred_team2}</div>
+                    <div style={{fontSize:18,fontWeight:900,color:side,display:"flex",alignItems:"center",gap:6}}>{p.is_joker&&<span style={{fontSize:22}}>🃏</span>}{p.pred_team1} - {p.pred_team2}</div>
                   </div>
                 );
               })}
