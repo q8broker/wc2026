@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v26-20260628";
+const APP_VERSION = "v27-20260628";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -1416,7 +1416,10 @@ function MatchRow({match,pred,savePred,live,onOpen,jokerUsed}) {
           {(ok?"✅ تم":busy?"...":pred?"🔄 تحديث":"💾 حفظ")+(joker?" 🃏":"")}
         </button>
       )}
-      {!finished&&locked&&<div style={{marginTop:8,textAlign:"center",fontSize:11.5,color:pred?C.gold:C.dim}}>{pred?"🔒 توقعك: "+pred.pred_team1+"-"+pred.pred_team2+(pred.is_joker?" 🃏":""):"🔒 انتهى وقت التوقع"}</div>}
+      {!finished&&locked&&<div style={{marginTop:8,textAlign:"center",fontSize:11.5,color:pred?C.gold:C.dim}}>{pred?"🔒 توقعك: "+pred.pred_team1+"-"+pred.pred_team2:"🔒 انتهى وقت التوقع"}</div>}
+      {!finished&&locked&&jGrp&&pred&&(
+        <div style={{marginTop:6,textAlign:"center",fontSize:11,fontWeight:800,color:pred.is_joker?C.gold:C.dim}}>{pred.is_joker?"🃏 الجوكر مفعّل · مقفل (بدأت المباراة)":"بدون جوكر · مقفل"}</div>
+      )}
       {errMsg&&<div style={{marginTop:6,textAlign:"center",fontSize:12.5,color:C.red,fontWeight:700}}>{errMsg}</div>}
     </div>
   );
@@ -1748,7 +1751,7 @@ function BoardTab({leaderboard,profile,matches,teams}) {
         );})}
         <div style={{marginTop:10,fontSize:11.5,color:C.dim,lineHeight:1.6}}>النقاط تُحسب لحظياً — لو صُحِّحت نتيجة تتغير تلقائياً</div>
       </div>
-      {sel&&(
+      {sel&&ReactDOM.createPortal((
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.78)",zIndex:650,display:"flex",alignItems:"flex-end"}} onClick={function(){setSel(null);}}>
           <div onClick={function(e){e.stopPropagation();}} style={{background:"#071832",borderRadius:"22px 22px 0 0",width:"100%",maxHeight:"78vh",overflowY:"auto",padding:"16px"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
@@ -1769,7 +1772,7 @@ function BoardTab({leaderboard,profile,matches,teams}) {
                     <span style={{color:pts>=3?C.green:pts>=1?C.gold:C.red,fontWeight:800}}>{pts} نقطة</span>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",fontSize:13.5}}>
-                    <span>توقعه: <b>{p.pred_team1} - {p.pred_team2}</b></span>
+                    <span>توقعه: <b>{p.pred_team1} - {p.pred_team2}</b>{p.is_joker&&<span style={{color:C.gold}}> 🃏</span>}</span>
                     <span>النتيجة: <b>{m.result_team1} - {m.result_team2}</b></span>
                   </div>
                 </div>
@@ -1777,7 +1780,7 @@ function BoardTab({leaderboard,profile,matches,teams}) {
             })}
           </div>
         </div>
-      )}
+      ), document.body)}
     </div>
   );
 }
@@ -2602,7 +2605,10 @@ function MatchPopup({match,myPred,profiles,savePred,liveData,jokerUsed,onClose})
               </div>
             ):<div style={{textAlign:"center",padding:30,color:C.dim,fontSize:14}}>لم تتوقع هذه المباراة</div>
             :isPlaceholder?<div style={{textAlign:"center",padding:24,fontSize:14,color:C.gold,lineHeight:1.7}}>هذه مباراة مسار إقصائي مبدئية. التوقع يفتح تلقائياً بعد اعتماد المنتخبين وحفظ المباراة الفعلية في الجدول.</div>
-            :locked?<div style={{textAlign:"center",padding:20,fontSize:14,color:myPred?C.gold:C.red}}>{myPred?"🔒 توقعك: "+myPred.pred_team1+" - "+myPred.pred_team2+(myPred.is_joker?" 🃏":""):"🔒 انتهى وقت التوقع"}</div>
+            :locked?<div style={{textAlign:"center",padding:20}}>
+                <div style={{fontSize:14,color:myPred?C.gold:C.red}}>{myPred?"🔒 توقعك: "+myPred.pred_team1+" - "+myPred.pred_team2:"🔒 انتهى وقت التوقع"}</div>
+                {jGrp&&myPred&&<div style={{marginTop:8,fontSize:12.5,fontWeight:800,color:myPred.is_joker?C.gold:C.dim}}>{myPred.is_joker?"🃏 الجوكر مفعّل · مقفل (بدأت المباراة)":"بدون جوكر · مقفل"}</div>}
+              </div>
             :(
               <div>
                 <div style={{textAlign:"center",marginBottom:16,fontSize:13.5,color:C.sub}}>توقّع النتيجة قبل الصافرة</div>
@@ -2744,7 +2750,7 @@ function MatchPopup({match,myPred,profiles,savePred,liveData,jokerUsed,onClose})
                       <div style={{fontSize:13.5,fontWeight:800}}>{profileName(p.user_id)} {p.is_joker&&<span style={{color:C.gold}}>🃏</span>}</div>
                       <div style={{fontSize:11.5,color:C.sub}}>{p.pred_team1===p.pred_team2?"تعادل":p.pred_team1>p.pred_team2?(match.team1&&match.team1.name_ar):(match.team2&&match.team2.name_ar)}</div>
                     </div>
-                    <div style={{fontSize:18,fontWeight:900,color:side}}>{p.pred_team1} - {p.pred_team2}</div>
+                    <div style={{fontSize:18,fontWeight:900,color:side,display:"flex",alignItems:"center",gap:4}}>{p.is_joker&&<span style={{fontSize:15,color:C.gold}}>🃏</span>}{p.pred_team1} - {p.pred_team2}</div>
                   </div>
                 );
               })}
