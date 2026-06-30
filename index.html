@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v28-20260628";
+const APP_VERSION = "v29-20260630";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -1538,11 +1538,22 @@ function KnockTab({matches,allMatches,teams,myPreds,liveMap,savePred,jokerUsed,o
   const BR_ORDER = {R32:[74,77,73,75,83,84,81,82,76,78,79,80,86,88,85,87], R16:[89,90,93,94,91,92,95,96], QF:[97,98,99,100], SF:[101,102], F:[104], TH:[103]};
   const treeStage = function(s){
     const synth = PLAN[s].map(function(x){return toSynthetic(x,s);});
-    const real = (bys[s]||[]).slice().sort(function(a,b){return new Date(a.match_utc)-new Date(b.match_utc);});
+    const real = (bys[s]||[]).slice();
     if(real.length){
-      // نطابق صفوف قاعدة البيانات على مقاعد خطة الفيفا حسب الترتيب الزمني
-      const synthSorted = synth.slice().sort(function(a,b){return new Date(a.match_utc)-new Date(b.match_utc);});
-      synthSorted.forEach(function(sy,i){ if(real[i]) sy.real = Object.assign({},real[i],{match_no:sy.match_no}); });
+      const used = {};
+      // 1) المطابقة الصحيحة: ضع كل مباراة حقيقية في مقعدها حسب هوية المنتخبين (لا حسب الوقت)
+      real.forEach(function(rm){
+        const seat = synth.find(function(sy){
+          if(sy.real) return false;
+          return (sy.team1_id===rm.team1_id && sy.team2_id===rm.team2_id) ||
+                 (sy.team1_id===rm.team2_id && sy.team2_id===rm.team1_id);
+        });
+        if(seat){ seat.real = Object.assign({},rm,{match_no:seat.match_no}); used[rm.id]=true; }
+      });
+      // 2) ما لم يُطابَق (مثلاً ثوالث مختلفة عن التوقع) يُملأ بالترتيب الزمني على المقاعد المتبقية
+      const rest = real.filter(function(rm){return !used[rm.id];}).sort(function(a,b){return new Date(a.match_utc)-new Date(b.match_utc);});
+      const freeSeats = synth.filter(function(sy){return !sy.real;}).sort(function(a,b){return new Date(a.match_utc)-new Date(b.match_utc);});
+      rest.forEach(function(rm,i){ if(freeSeats[i]) freeSeats[i].real = Object.assign({},rm,{match_no:freeSeats[i].match_no}); });
     }
     const byNo={}; synth.forEach(function(sy){ byNo[sy.match_no]=sy.real||sy; });
     return BR_ORDER[s].map(function(no){return byNo[no];}).filter(Boolean);
