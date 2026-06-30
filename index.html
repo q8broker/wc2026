@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v29-20260630";
+const APP_VERSION = "v30-20260630";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -1399,7 +1399,7 @@ function MatchRow({match,pred,savePred,live,onOpen,jokerUsed}) {
       {finished&&pred&&(
         <div style={{marginTop:9,padding:"6px 10px",background:"rgba(255,255,255,.03)",borderRadius:8,display:"flex",justifyContent:"space-between",fontSize:12.5}}>
           <span style={{color:C.sub}}>توقعك: <b style={{color:C.text}}>{pred.pred_team1}-{pred.pred_team2}</b></span>
-          {pts!=null&&<span style={{color:pts===3?C.green:pts===1?C.gold:C.red,fontWeight:700}}>{pts===3?"🏆 3 نقاط":pts===1?"👍 نقطة":"❌ صفر"}</span>}
+          {pts!=null&&<span style={{color:pts>=3?C.green:pts>=1?C.gold:C.red,fontWeight:700}}>{pts>0?(pred.is_joker?"🃏 ":"")+"🏆 "+(pts===1?"نقطة":pts===2?"نقطتان":pts+" نقاط"):"❌ صفر"}</span>}
         </div>
       )}
       <div style={{marginTop:8,textAlign:"center",fontSize:11.5,color:C.blue,fontWeight:900}}>اضغط على البطاقة لفتح التفاصيل</div>
@@ -1693,7 +1693,7 @@ function KnockTab({matches,allMatches,teams,myPreds,liveMap,savePred,jokerUsed,o
                 {finished?<div style={{fontSize:20,fontWeight:900,letterSpacing:2}}>{m.result_team1} - {m.result_team2}</div>
                  :lvNow&&lv.goals&&lv.goals.home!=null?<div style={{fontSize:20,fontWeight:900,letterSpacing:2,color:C.red}}>{lv.goals.home} - {lv.goals.away}</div>
                  :<div style={{fontSize:12.5,color:C.dim}}>VS</div>}
-                {pred&&finished&&pts!=null&&<div style={{fontSize:11.5,fontWeight:700,color:pts===3?C.green:pts===1?C.gold:C.red}}>{pts===3?"🏆":pts===1?"👍":"❌"}</div>}
+                {pred&&finished&&pts!=null&&<div style={{fontSize:11.5,fontWeight:700,color:pts>=3?C.green:pts>=1?C.gold:C.red}}>{pts>0?(pred.is_joker?"🃏 ":"")+"🏆 "+pts:"❌"}</div>}
               </div>
               <div style={{flex:1,display:"flex",alignItems:"center",gap:8,justifyContent:"flex-end",minWidth:0}}>
                 <span style={{fontSize:14,fontWeight:800,lineHeight:1.25,color:m.team2&&m.team2.is_arab?C.gold:C.text,whiteSpace:"normal",overflow:"visible",textAlign:"left",opacity:m.is_placeholder?0.5:1}}>{m.team2?m.team2.name_ar:"؟"}</span>
