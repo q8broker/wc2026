@@ -506,10 +506,18 @@ async function autoApplyResults(rows: AnyRow[]) {
     const homeName = String(row.home_name ?? "");
     const t1 = TEAM_NAME_MAP[m.team1_id] ?? String(m.team1_id);
     const t2 = TEAM_NAME_MAP[m.team2_id] ?? String(m.team2_id);
-    if (namesMatch(homeName, t2) && !namesMatch(homeName, t1)) { const t = h; h = a; a = t; }
+    const swapped = namesMatch(homeName, t2) && !namesMatch(homeName, t1);
+    if (swapped) { const t = h; h = a; a = t; }
+    // المتأهل (يشمل الفائز بركلات الترجيح): winner "1"=home و"2"=away، مع مراعاة المبادلة
+    const w = row.score?.winner;
+    let winnerTeamId: string | null = null;
+    if (w === "1") winnerTeamId = swapped ? m.team2_id : m.team1_id;
+    else if (w === "2") winnerTeamId = swapped ? m.team1_id : m.team2_id;
+    const upd: Record<string, unknown> = { result_team1: h, result_team2: a, status: "finished" };
+    if (winnerTeamId) upd.winner_team_id = winnerTeamId;
     const { error: upErr } = await supabase
       .from("matches")
-      .update({ result_team1: h, result_team2: a, status: "finished" })
+      .update(upd)
       .eq("id", m.id)
       .neq("status", "finished");
     if (!upErr) {

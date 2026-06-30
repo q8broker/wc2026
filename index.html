@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v30-20260630";
+const APP_VERSION = "v31-20260630";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -1504,6 +1504,7 @@ function KnockTab({matches,allMatches,teams,myPreds,liveMap,savePred,jokerUsed,o
     });
     return result;
   })();
+  const winnerByNo={}, loserByNo={}; // يُملأ من المباريات المنتهية لتمرير المتأهلين عبر الشجرة
   const slotTeam=function(slot){
     if(slot[0]==="1"||slot[0]==="2"){
       const g=slot.slice(1), idx=slot[0]==="1"?0:1;
@@ -1512,12 +1513,45 @@ function KnockTab({matches,allMatches,teams,myPreds,liveMap,savePred,jokerUsed,o
     if(slot[0]==="3"){
       return thirdAssign[slot]||placeholderTeam(slotLabel(slot));
     }
+    if(slot[0]==="W"){ return winnerByNo[slot.slice(1)]||placeholderTeam(slotLabel(slot)); }
+    if(slot[0]==="L"){ return loserByNo[slot.slice(1)]||placeholderTeam(slotLabel(slot)); }
     return placeholderTeam(slotLabel(slot));
   };
   const toSynthetic=function(x,stage){
     const t1=slotTeam(x.a), t2=slotTeam(x.b);
     return {id:"ko-"+x.no,is_placeholder:true,stage:stage,match_no:x.no,match_utc:x.date,status:"scheduled",venue:x.venue,team1_id:t1.id,team2_id:t2.id,team1:t1,team2:t2,slot_a:x.a,slot_b:x.b};
   };
+  /* إسناد المباريات الحقيقية لمقاعد الفيفا حسب «المرساة»: المركز المؤكد (متصدر/وصيف أو فائز دور سابق)،
+     لا حسب الثالث (تخمينه قد يخطئ). كل منتخب يلعب مباراة واحدة فالمرساة تحدد المقعد بدقة. الباقي بالترتيب الزمني. */
+  const assignRealToSeats=function(stage){
+    const reals=(bys[stage]||[]).slice();
+    const seatReal={};
+    if(!reals.length) return seatReal;
+    const seats=PLAN[stage].map(function(x){
+      const anchors=[x.a,x.b].filter(function(sl){return sl[0]!=="3";}).map(function(sl){return slotTeam(sl);}).filter(function(t){return t&&t.id;}).map(function(t){return t.id;});
+      return {no:x.no,date:x.date,anchors:anchors};
+    });
+    const usedSeat={},usedReal={};
+    reals.forEach(function(rm){
+      const ids=[rm.team1_id,rm.team2_id];
+      const seat=seats.find(function(se){return !usedSeat[se.no]&&se.anchors.length&&se.anchors.every(function(id){return ids.indexOf(id)>=0;});});
+      if(seat){usedSeat[seat.no]=true;usedReal[rm.id]=true;seatReal[seat.no]=rm;}
+    });
+    const restR=reals.filter(function(r){return !usedReal[r.id];}).sort(function(a,b){return new Date(a.match_utc)-new Date(b.match_utc);});
+    const freeS=seats.filter(function(se){return !usedSeat[se.no];}).sort(function(a,b){return new Date(a.date)-new Date(b.date);});
+    restR.forEach(function(rm,i){if(freeS[i])seatReal[freeS[i].no]=rm;});
+    return seatReal;
+  };
+  /* تمرير المتأهلين عبر الأدوار (R32 أولاً ليتغذى R16 منه...). يشمل المتأهل بركلات الترجيح عبر winner_team_id */
+  const seatRealByStage={};
+  ["R32","R16","QF","SF","TH","F"].forEach(function(s){
+    const sr=assignRealToSeats(s); seatRealByStage[s]=sr;
+    Object.keys(sr).forEach(function(no){
+      const rm=sr[no]; if(rm.status!=="finished") return;
+      var wid=rm.winner_team_id||(rm.result_team1>rm.result_team2?rm.team1_id:rm.result_team2>rm.result_team1?rm.team2_id:null);
+      if(wid){ winnerByNo[no]=teams[wid]||rm.team1; loserByNo[no]=teams[wid===rm.team1_id?rm.team2_id:rm.team1_id]||rm.team2; }
+    });
+  });
   /* دمج: المباريات الحقيقية تحل محل معايناتها (بالترتيب الزمني)، وتبقى المعاينات للمقاعد التي لم تُعتمد بعد */
   const stageList=function(s){
     const synth = PLAN[s].map(function(x){return toSynthetic(x,s);});
@@ -1538,23 +1572,8 @@ function KnockTab({matches,allMatches,teams,myPreds,liveMap,savePred,jokerUsed,o
   const BR_ORDER = {R32:[74,77,73,75,83,84,81,82,76,78,79,80,86,88,85,87], R16:[89,90,93,94,91,92,95,96], QF:[97,98,99,100], SF:[101,102], F:[104], TH:[103]};
   const treeStage = function(s){
     const synth = PLAN[s].map(function(x){return toSynthetic(x,s);});
-    const real = (bys[s]||[]).slice();
-    if(real.length){
-      const used = {};
-      // 1) المطابقة الصحيحة: ضع كل مباراة حقيقية في مقعدها حسب هوية المنتخبين (لا حسب الوقت)
-      real.forEach(function(rm){
-        const seat = synth.find(function(sy){
-          if(sy.real) return false;
-          return (sy.team1_id===rm.team1_id && sy.team2_id===rm.team2_id) ||
-                 (sy.team1_id===rm.team2_id && sy.team2_id===rm.team1_id);
-        });
-        if(seat){ seat.real = Object.assign({},rm,{match_no:seat.match_no}); used[rm.id]=true; }
-      });
-      // 2) ما لم يُطابَق (مثلاً ثوالث مختلفة عن التوقع) يُملأ بالترتيب الزمني على المقاعد المتبقية
-      const rest = real.filter(function(rm){return !used[rm.id];}).sort(function(a,b){return new Date(a.match_utc)-new Date(b.match_utc);});
-      const freeSeats = synth.filter(function(sy){return !sy.real;}).sort(function(a,b){return new Date(a.match_utc)-new Date(b.match_utc);});
-      rest.forEach(function(rm,i){ if(freeSeats[i]) freeSeats[i].real = Object.assign({},rm,{match_no:freeSeats[i].match_no}); });
-    }
+    const sr = seatRealByStage[s]||{};
+    synth.forEach(function(sy){ if(sr[sy.match_no]) sy.real = Object.assign({},sr[sy.match_no],{match_no:sy.match_no}); });
     const byNo={}; synth.forEach(function(sy){ byNo[sy.match_no]=sy.real||sy; });
     return BR_ORDER[s].map(function(no){return byNo[no];}).filter(Boolean);
   };
