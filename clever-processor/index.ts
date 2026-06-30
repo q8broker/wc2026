@@ -497,7 +497,10 @@ async function autoApplyResults(rows: AnyRow[]) {
   for (const m of dbMatches) {
     const row = byId[String(m.api_fixture_id)];
     if (!row || row.status_short !== "FT") continue;
-    let h = row.score?.home, a = row.score?.away;
+    // نتيجة الوقت الأصلي (٩٠ دقيقة) لا الوقت الإضافي — التوقعات تُحسب على الزمن الأصلي.
+    // في الإقصائيات التي تذهب للتمديد، score.home/away تشمل الوقت الإضافي بينما *FullTime هو الـ٩٠ دقيقة.
+    let h = row.score?.homeFullTime ?? row.score?.home;
+    let a = row.score?.awayFullTime ?? row.score?.away;
     if (h == null || a == null) continue;
     // تصحيح الاتجاه: home في المصدر قد يكون team2 عندنا
     const homeName = String(row.home_name ?? "");
