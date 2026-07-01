@@ -214,6 +214,12 @@ function normalizeFixture(item: AnyRow, fixtureSeason: number | string = season)
       away: safeNumber(item.awayScore),
       homeFullTime: safeNumber(item.homeFullTimeScore),
       awayFullTime: safeNumber(item.awayFullTimeScore),
+      // __REA__/__REB__ = النتيجة بعد الأشواط الإضافية (قبل الترجيح) — موجودة فقط عند التمديد
+      homeET: safeNumber(item.__REA__),
+      awayET: safeNumber(item.__REB__),
+      // ركلات الترجيح — موجودة فقط عند حدوثها
+      homePen: safeNumber(item.__RPA__),
+      awayPen: safeNumber(item.__RPB__),
       winner: item.winner ?? null,
     },
     fixture: item,
@@ -497,11 +503,17 @@ async function autoApplyResults(rows: AnyRow[]) {
   for (const m of dbMatches) {
     const row = byId[String(m.api_fixture_id)];
     if (!row || row.status_short !== "FT") continue;
-    // نتيجة الوقت الأصلي (٩٠ دقيقة) لا الوقت الإضافي — التوقعات تُحسب على الزمن الأصلي.
-    // في الإقصائيات التي تذهب للتمديد، score.home/away تشمل الوقت الإضافي بينما *FullTime هو الـ٩٠ دقيقة.
-    let h = row.score?.homeFullTime ?? row.score?.home;
-    let a = row.score?.awayFullTime ?? row.score?.away;
+    // القاعدة المعتمدة: النتيجة حتى نهاية الأشواط الإضافية وقبل ركلات الترجيح.
+    // homeET/awayET (__REA__/__REB__) موجودة فقط عند التمديد = النتيجة بعد الإضافي قبل الترجيح.
+    // بدونها: home/away هي نتيجة الـ90 النهائية. تحذير: عند الترجيح home/away تضيف +1 للفائز.
+    let h = row.score?.homeET ?? row.score?.home;
+    let a = row.score?.awayET ?? row.score?.away;
     if (h == null || a == null) continue;
+    // أمان: لو صار ترجيح بلا حقول ET (لا يُتوقع)، أزل +1 المضافة للفائز
+    if (row.score?.homeET == null && (row.score?.homePen != null || row.score?.awayPen != null)) {
+      if (row.score?.winner === "1") h -= 1;
+      else if (row.score?.winner === "2") a -= 1;
+    }
     // تصحيح الاتجاه: home في المصدر قد يكون team2 عندنا
     const homeName = String(row.home_name ?? "");
     const t1 = TEAM_NAME_MAP[m.team1_id] ?? String(m.team1_id);
