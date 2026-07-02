@@ -340,14 +340,19 @@ function asList(data: any) {
 }
 
 async function upsertFixtures(items: AnyRow[]) {
-  const rows = items
+  const mapped = items
     .map(normalizeFixture)
     .filter((row) => row.api_fixture_id && isTournamentWindow(row));
+  // إزالة التكرار: نفس المباراة قد تأتي من feed الجدول وfeed النتائج/اللايف في الدفعة نفسها،
+  // وupsert يرفض تعديل الصف مرتين بأمر واحد (خطأ 21000). الأخير يفوز = الأحدث (results/live بعد fixtures).
+  const byId: Record<string, AnyRow> = {};
+  for (const row of mapped) byId[`${row.provider}:${row.api_fixture_id}`] = row;
+  const rows = Object.values(byId);
   if (!rows.length) return 0;
   const { error } = await supabase
     .from("football_fixture_cache")
     .upsert(rows, { onConflict: "provider,api_fixture_id" });
-  if (error) throw error;
+  if (error) throw new Error(`fixture-upsert: ${JSON.stringify(error).slice(0, 300)}`);
   return rows.length;
 }
 
