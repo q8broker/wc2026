@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v33-20260701";
+const APP_VERSION = "v34-20260701";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -1449,7 +1449,7 @@ function MatchRow({match,pred,savePred,live,onOpen,jokerUsed,chInfo}) {
       )}
       {chOn&&(
         <div onClick={function(e){e.stopPropagation();}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:chall!==""&&parseInt(chall,10)>0?"rgba(240,80,80,.08)":"rgba(255,255,255,.04)",border:"1px solid "+(chall!==""&&parseInt(chall,10)>0?C.redBdr:C.border),borderRadius:10,padding:"7px 10px",marginTop:8}}>
-          <span style={{fontSize:11.5,fontWeight:800,color:chall!==""&&parseInt(chall,10)>0?C.red:C.sub}}>{"⚔️ تحدِّ بنقاطك · المتاح "+chAvail}</span>
+          <span style={{fontSize:11.5,fontWeight:800,color:chall!==""&&parseInt(chall,10)>0?C.red:C.sub}}>{"⚔️ تحدي الريمونتادا · المتاح "+chAvail}</span>
           <input type="number" inputMode="numeric" min="0" max={chAvail} value={chall} placeholder="0"
             onChange={function(e){var v=e.target.value; if(v===""){setChall("");return;} var n=parseInt(v,10); if(isNaN(n)||n<0)n=0; if(n>Math.min(20,chAvail))n=Math.min(20,chAvail); setChall(String(n));}}
             onClick={function(e){e.stopPropagation();}}
@@ -1463,7 +1463,7 @@ function MatchRow({match,pred,savePred,live,onOpen,jokerUsed,chInfo}) {
       )}
       {!finished&&locked&&<div style={{marginTop:8,textAlign:"center",fontSize:11.5,color:pred?C.gold:C.dim}}>{pred?"🔒 توقعك: "+pred.pred_team1+"-"+pred.pred_team2:"🔒 انتهى وقت التوقع"}</div>}
       {!finished&&locked&&jGrp&&pred&&(
-        <div style={{marginTop:6,textAlign:"center",fontSize:11,fontWeight:800,color:pred.is_joker?C.gold:C.dim}}>{(pred.is_joker?"🃏 الجوكر مفعّل · مقفل (بدأت المباراة)":"بدون جوكر · مقفل")+(pred.challenge_points?" · ⚔️ تحدٍّ بـ"+pred.challenge_points:"")}</div>
+        <div style={{marginTop:6,textAlign:"center",fontSize:11,fontWeight:800,color:pred.is_joker?C.gold:C.dim}}>{(pred.is_joker?"🃏 الجوكر مفعّل · مقفل (بدأت المباراة)":"بدون جوكر · مقفل")+(pred.challenge_points?" · ⚔️ ريمونتادا بـ"+pred.challenge_points:"")}</div>
       )}
       {errMsg&&<div style={{marginTop:6,textAlign:"center",fontSize:12.5,color:C.red,fontWeight:700}}>{errMsg}</div>}
     </div>
@@ -2059,7 +2059,7 @@ function AdminTab({pending,matches,teams,approveUser,setResult,champWin,setChamp
 
       <div style={{fontSize:14,fontWeight:700,color:C.gold,marginBottom:12}}>⚙️ إعدادات الانتساب</div>
       <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:14,padding:12,marginBottom:16}}>
-        {[["registration_open","تفعيل التسجيل","السماح بتسجيل أعضاء جدد"],["auto_approve","الانتساب التلقائي","قبول الأعضاء الجدد بدون موافقة الإدارة"],["challenge_enabled","تفعيل التحدي ⚔️","السماح بالتضحية بالنقاط: مطابقة تامة +التحدي، خطأ −التحدي (الحد 20 وبهامش نقاطه −3)"]].map(function(s){
+        {[["registration_open","تفعيل التسجيل","السماح بتسجيل أعضاء جدد"],["auto_approve","الانتساب التلقائي","قبول الأعضاء الجدد بدون موافقة الإدارة"],["challenge_enabled","تفعيل تحدي الريمونتادا ⚔️","السماح بالتضحية بالنقاط: مطابقة تامة +التحدي، خطأ −التحدي (الحد 20 وبهامش نقاطه −3)"]].map(function(s){
           const on=appSettings&&appSettings[s[0]]==="true";
           return (
             <div key={s[0]} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:"1px solid "+C.border}}>
@@ -2676,7 +2676,7 @@ function MatchPopup({match,myPred,profiles,savePred,liveData,jokerUsed,chInfo,on
             {finished?myPred?(
               <div>
                 <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:14,padding:"16px",textAlign:"center",marginBottom:12}}>
-                  <div style={{fontSize:14,color:C.sub,marginBottom:8}}>توقعك {myPred.is_joker&&<span style={{color:C.gold,fontWeight:900}}>🃏 جوكر</span>}{myPred.challenge_points>0&&<span style={{color:C.red,fontWeight:900}}> ⚔️ تحدٍّ بـ{myPred.challenge_points}</span>}</div>
+                  <div style={{fontSize:14,color:C.sub,marginBottom:8}}>توقعك {myPred.is_joker&&<span style={{color:C.gold,fontWeight:900}}>🃏 جوكر</span>}{myPred.challenge_points>0&&<span style={{color:C.red,fontWeight:900}}> ⚔️ ريمونتادا بـ{myPred.challenge_points}</span>}</div>
                   <div style={{fontSize:28,fontWeight:900,letterSpacing:3}}>{myPred.pred_team1} - {myPred.pred_team2}</div>
                   <div style={{fontSize:13.5,color:C.sub,marginTop:6}}>النتيجة: {match.result_team1} - {match.result_team2}</div>
                 </div>
@@ -2688,7 +2688,7 @@ function MatchPopup({match,myPred,profiles,savePred,liveData,jokerUsed,chInfo,on
             :isPlaceholder?<div style={{textAlign:"center",padding:24,fontSize:14,color:C.gold,lineHeight:1.7}}>هذه مباراة مسار إقصائي مبدئية. التوقع يفتح تلقائياً بعد اعتماد المنتخبين وحفظ المباراة الفعلية في الجدول.</div>
             :locked?<div style={{textAlign:"center",padding:20}}>
                 <div style={{fontSize:14,color:myPred?C.gold:C.red}}>{myPred?"🔒 توقعك: "+myPred.pred_team1+" - "+myPred.pred_team2:"🔒 انتهى وقت التوقع"}</div>
-                {jGrp&&myPred&&<div style={{marginTop:8,fontSize:12.5,fontWeight:800,color:myPred.is_joker?C.gold:C.dim}}>{(myPred.is_joker?"🃏 الجوكر مفعّل · مقفل (بدأت المباراة)":"بدون جوكر · مقفل")+(myPred.challenge_points?" · ⚔️ تحدٍّ بـ"+myPred.challenge_points:"")}</div>}
+                {jGrp&&myPred&&<div style={{marginTop:8,fontSize:12.5,fontWeight:800,color:myPred.is_joker?C.gold:C.dim}}>{(myPred.is_joker?"🃏 الجوكر مفعّل · مقفل (بدأت المباراة)":"بدون جوكر · مقفل")+(myPred.challenge_points?" · ⚔️ ريمونتادا بـ"+myPred.challenge_points:"")}</div>}
               </div>
             :(
               <div>
@@ -2717,7 +2717,7 @@ function MatchPopup({match,myPred,profiles,savePred,liveData,jokerUsed,chInfo,on
                     <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
                       <span style={{fontSize:22}}>⚔️</span>
                       <div>
-                        <div style={{fontSize:13.5,fontWeight:800,color:chall!==""&&parseInt(chall,10)>0?C.red:C.text}}>التحدي — ضحِّ بنقاطك</div>
+                        <div style={{fontSize:13.5,fontWeight:800,color:chall!==""&&parseInt(chall,10)>0?C.red:C.text}}>تحدي الريمونتادا — ضحِّ بنقاطك</div>
                         <div style={{fontSize:11.5,color:C.sub}}>مطابقة تامة +{chall!==""&&parseInt(chall,10)>0?chall:"التحدي"} · خطأ −{chall!==""&&parseInt(chall,10)>0?chall:"التحدي"} · فائز فقط بلا أثر · المتاح لك: {chAvail}</div>
                       </div>
                     </div>

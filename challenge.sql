@@ -51,14 +51,14 @@ BEGIN
   SELECT challenge_points INTO v_cur_ch FROM public.predictions WHERE user_id = v_uid AND match_id = p_match_id;
   v_challenge := COALESCE(p_challenge, v_cur_ch, 0);
   IF v_challenge < 0 OR v_challenge > 20 THEN
-    RETURN jsonb_build_object('error','التحدي بين 1 و 20 نقطة');
+    RETURN jsonb_build_object('error','الريمونتادا بين 1 و 20 نقطة');
   END IF;
 
   -- الفحوص تُطبق فقط عند تغيير قيمة التحدي إلى قيمة موجبة (القيمة المحفوظة أُجيزت عند وضعها)
   IF p_challenge IS NOT NULL AND v_challenge > 0 AND v_challenge <> COALESCE(v_cur_ch,0) THEN
     SELECT value INTO v_flag FROM public.app_settings WHERE key = 'challenge_enabled';
     IF COALESCE(v_flag,'false') <> 'true' THEN
-      RETURN jsonb_build_object('error','التحدي غير مفعل حالياً');
+      RETURN jsonb_build_object('error','تحدي الريمونتادا غير مفعل حالياً');
     END IF;
 
     -- نقاط المستخدم الحالية (نفس فورمولا leaderboard: أساس × جوكر + أثر التحدي للمباريات المنتهية)
@@ -92,7 +92,7 @@ BEGIN
 
     v_avail := LEAST(20, v_pts - 3 - v_pending);
     IF v_challenge > v_avail THEN
-      RETURN jsonb_build_object('error','تجاوزت حد التحدي — المتاح لك الآن: '||GREATEST(v_avail,0)||' نقطة');
+      RETURN jsonb_build_object('error','تجاوزت حد الريمونتادا — المتاح لك الآن: '||GREATEST(v_avail,0)||' نقطة');
     END IF;
   END IF;
 
