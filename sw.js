@@ -51,16 +51,18 @@ self.addEventListener("fetch", function(event) {
     return;
   }
 
-  // الباقي (مكتبات CDN، أعلام، خطوط): شبكة ثم كاش، ونخزن الناجح
+  // الباقي (مكتبات CDN، أعلام، خطوط): كاش أولاً — روابط مثبّتة الإصدار، فالفتح يصير فورياً
+  // حتى على الشبكات البطيئة بدل انتظار التحميل من الإنترنت في كل مرة
   event.respondWith(
-    fetch(req).then(function(res) {
-      if (res && res.ok && (req.url.includes("unpkg.com") || req.url.includes("jsdelivr.net") || req.url.includes("flagcdn.com") || req.url.includes("gstatic.com") || req.url.includes("googleapis.com"))) {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then(function(cache) { cache.put(req, copy); }).catch(function() {});
-      }
-      return res;
-    }).catch(function() {
-      return caches.match(req);
+    caches.match(req).then(function(hit) {
+      if (hit) return hit;
+      return fetch(req).then(function(res) {
+        if (res && res.ok && (req.url.includes("unpkg.com") || req.url.includes("jsdelivr.net") || req.url.includes("flagcdn.com") || req.url.includes("gstatic.com") || req.url.includes("googleapis.com"))) {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then(function(cache) { cache.put(req, copy); }).catch(function() {});
+        }
+        return res;
+      });
     })
   );
 });
