@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v34-20260701";
+const APP_VERSION = "v35-20260703";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -1110,6 +1110,20 @@ function HomeTab({profile,myPts,matches,myPreds,favs,myChamp,teams,champLock,liv
           );})}
         </div>}
       </div>
+
+      {!isChampLocked && (
+        <div style={{background:champTeam?C.goldBg:C.redBg,border:"1.5px solid "+(champTeam?C.goldBdr:C.redBdr),borderRadius:16,padding:"13px 16px",marginBottom:14}}>
+          <div style={{fontSize:14.5,fontWeight:900,color:champTeam?C.gold:C.red,marginBottom:6}}>
+            {champTeam?"⏰ آخر فرصة لتغيير توقع البطل!":"⚠️ ما اخترت البطل بعد — لا تفوّت الـ15 نقطة!"}
+          </div>
+          <div style={{fontSize:12.5,color:C.text,lineHeight:1.9}}>
+            {"يُقفل اختيار البطل نهائياً مع انطلاق دور الـ16 (كندا × المغرب): "}
+            <b style={{color:champTeam?C.gold:C.red}}>{fd(champLock)} · {ft(champLock)}</b>
+            <br/>
+            {"طريقة الاختيار: تبويب «المجموعات» ← جدول أي مجموعة ← اضغط رمز 🏳 بجانب منتخبك المتوقع ليتحول إلى 🏆"}
+          </div>
+        </div>
+      )}
 
       <div style={{background:champTeam?C.goldBg:C.card,border:"1px solid "+(champTeam?C.goldBdr:C.border),borderRadius:16,padding:"12px 16px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div>
