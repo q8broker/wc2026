@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v35-20260703";
+const APP_VERSION = "v36-20260704";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -980,7 +980,7 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
         {tab==="grps"  && <GroupsTab matches={matches} teams={teams} favs={favs} toggleFav={toggleFav} myChamp={myChamp} saveChampion={saveChampion} champLock={champLock} liveMap={liveMap} onTeamMatches={function(id){setTeamMatchFilter(id);setMatchFlt("all");setTab("match");}}/>}
         {tab==="match" && <MatchesTab matches={matches} myPreds={myPreds} savePred={savePred} matchFlt={matchFlt} setMatchFlt={setMatchFlt} teamFilter={teamMatchFilter} setTeamFilter={setTeamMatchFilter} liveMap={liveMap} jokerUsed={jokerUsed} chInfo={chInfo} onOpen={setPopup}/>}
         {tab==="knock" && <KnockTab matches={matches.filter(function(m){return m.stage&&m.stage!=="group";})} allMatches={matches} teams={teams} myPreds={myPreds} liveMap={liveMap} savePred={savePred} jokerUsed={jokerUsed} chInfo={chInfo} onOpen={setPopup}/>}
-        {tab==="board" && <BoardTab leaderboard={leaderboard} profile={profile} matches={matches} teams={teams}/>}
+        {tab==="board" && <BoardTab leaderboard={leaderboard} profile={profile} matches={matches} teams={teams} allChamp={allChamp} champLock={champLock}/>}
         {tab==="me"    && <ProfileTab profile={profile} setProfile={setProfile} myPts={myPts} predCount={Object.keys(myPreds).length} favCount={favs.size} myChamp={myChamp} teams={teams}/>}
         {tab==="admin" && <AdminTab pending={pending} matches={matches} teams={teams} approveUser={approveUser} setResult={setResult} champWin={champWin} setChampWinner={setChampWinner} syncAPI={syncAPI} pullResults={pullResults} applyResults={applyResults} appSettings={appSettings} toggleSetting={toggleSetting} members={profiles}/>}
         </Boundary>
@@ -1791,9 +1791,13 @@ function KnockTab({matches,allMatches,teams,myPreds,liveMap,savePred,jokerUsed,c
 }
 
 /* ═══════════════ LEADERBOARD ══════════════════════════════════ */
-function BoardTab({leaderboard,profile,matches,teams}) {
+function BoardTab({leaderboard,profile,matches,teams,allChamp,champLock}) {
   const medals=["🥇","🥈","🥉"];
   const [sel,setSel] = useState(null);
+  /* توقعات البطل تُكشف للجميع بعد انطلاق دور الـ16 (السرية قبلها مفروضة من السيرفر عبر RLS) */
+  const champRevealed = champLock && new Date()>=champLock;
+  const champByUser = {};
+  (allChamp||[]).forEach(function(c){ champByUser[c.user_id]=c.team_id; });
   const [selPreds,setSelPreds] = useState(null); // توقعات العضو المختار — تُسحب عند الضغط فقط
   // عند اختيار عضو: اسحب توقعاته للمباريات المنتهية فقط (ديناميكياً، لا سحب للكل)
   useEffect(function(){
@@ -1824,6 +1828,16 @@ function BoardTab({leaderboard,profile,matches,teams}) {
             <div style={{flex:1}}>
               <div style={{fontSize:14.5,fontWeight:900,color:me?C.gold:C.text}}>{u.username}{me&&<span style={{fontSize:11.5,color:C.gold,fontWeight:400}}> (أنا)</span>}</div>
               <div style={{fontSize:11.5,color:C.sub}}>{u.display_name} · {u.predCount} توقع</div>
+              {champRevealed&&champByUser[u.id]&&teams[champByUser[u.id]]&&(
+                <div style={{display:"flex",alignItems:"center",gap:5,marginTop:3}}>
+                  <span style={{fontSize:11,color:C.gold,fontWeight:800}}>🥇 بطله:</span>
+                  <TeamFlag team={teams[champByUser[u.id]]} size={14}/>
+                  <span style={{fontSize:11.5,fontWeight:800,color:C.gold}}>{teams[champByUser[u.id]].name_ar}</span>
+                </div>
+              )}
+              {champRevealed&&!champByUser[u.id]&&(
+                <div style={{fontSize:11,color:C.dim,marginTop:3}}>🥇 بدون توقع بطل</div>
+              )}
             </div>
             <div style={{textAlign:"left"}}>
               <div style={{fontSize:22,fontWeight:900,color:clr}}>{u.pts}</div>
@@ -1847,7 +1861,7 @@ function BoardTab({leaderboard,profile,matches,teams}) {
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <div>
                 <div style={{fontSize:15,fontWeight:900,color:sel.id===profile.id?C.gold:C.text}}>{sel.username}{sel.id===profile.id&&" (أنا)"}</div>
-                <div style={{fontSize:11.5,color:C.sub}}>{sel.display_name} · مباريات منتهية فقط</div>
+                <div style={{fontSize:11.5,color:C.sub}}>{sel.display_name} · مباريات منتهية فقط{champRevealed&&champByUser[sel.id]&&teams[champByUser[sel.id]]?" · 🥇 بطله: "+teams[champByUser[sel.id]].name_ar:""}</div>
               </div>
               <button onClick={function(){setSel(null);}} style={{background:"rgba(255,255,255,.08)",border:"none",borderRadius:9,width:32,height:32,color:C.sub}}>x</button>
             </div>
