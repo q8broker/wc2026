@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v36-20260704";
+const APP_VERSION = "v37-20260710";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -1382,10 +1382,9 @@ function MatchRow({match,pred,savePred,live,onOpen,jokerUsed,chInfo}) {
   const jAvail=jLimit-jUsedOther;                 // متاح لهذه المباراة (بدون احتساب الزر المحلي)
   const jRemain=jAvail-(joker?1:0);               // المتبقي بعد اختيار هذه المباراة (يتغير حياً مع الزر)
   const canJoker=jGrp&&!finished&&!locked&&(joker||jAvail>0);
-  // التحدي (يظهر فقط عند تفعيل الميزة من الإدارة) — السيرفر هو الحكم النهائي للهامش
+  // التحدي (يظهر فقط عند تفعيل الميزة من الإدارة) — بلا شرط هامش، الحد الأقصى 40
   const chOn = Boolean(chInfo&&chInfo.on)&&!finished&&!locked;
-  const chCur = (pred&&pred.challenge_points)||0;
-  const chAvail = chInfo ? Math.max(0, Math.min(20, chInfo.pts-3-(chInfo.pending-chCur))) : 0;
+  const CH_MAX = 40;
 
   const lvShort=live&&live.status&&live.status.short;
   const lvNow=!finished&&isLiveShort(lvShort);
@@ -1463,9 +1462,9 @@ function MatchRow({match,pred,savePred,live,onOpen,jokerUsed,chInfo}) {
       )}
       {chOn&&(
         <div onClick={function(e){e.stopPropagation();}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:chall!==""&&parseInt(chall,10)>0?"rgba(240,80,80,.08)":"rgba(255,255,255,.04)",border:"1px solid "+(chall!==""&&parseInt(chall,10)>0?C.redBdr:C.border),borderRadius:10,padding:"7px 10px",marginTop:8}}>
-          <span style={{fontSize:11.5,fontWeight:800,color:chall!==""&&parseInt(chall,10)>0?C.red:C.sub}}>{"⚔️ تحدي الريمونتادا · المتاح "+chAvail}</span>
-          <input type="number" inputMode="numeric" min="0" max={chAvail} value={chall} placeholder="0"
-            onChange={function(e){var v=e.target.value; if(v===""){setChall("");return;} var n=parseInt(v,10); if(isNaN(n)||n<0)n=0; if(n>Math.min(20,chAvail))n=Math.min(20,chAvail); setChall(String(n));}}
+          <span style={{fontSize:11.5,fontWeight:800,color:chall!==""&&parseInt(chall,10)>0?C.red:C.sub}}>{"⚔️ تحدي الريمونتادا · حتى "+CH_MAX}</span>
+          <input type="number" inputMode="numeric" min="0" max={CH_MAX} value={chall} placeholder="0"
+            onChange={function(e){var v=e.target.value; if(v===""){setChall("");return;} var n=parseInt(v,10); if(isNaN(n)||n<0)n=0; if(n>CH_MAX)n=CH_MAX; setChall(String(n));}}
             onClick={function(e){e.stopPropagation();}}
             style={{width:52,height:30,textAlign:"center",fontSize:14,fontWeight:900,background:"rgba(255,255,255,.09)",border:"1px solid "+(chall!==""&&parseInt(chall,10)>0?C.redBdr:C.border),borderRadius:8,color:C.text,fontFamily:"inherit",outline:"none",flexShrink:0}}/>
         </div>
@@ -2087,7 +2086,7 @@ function AdminTab({pending,matches,teams,approveUser,setResult,champWin,setChamp
 
       <div style={{fontSize:14,fontWeight:700,color:C.gold,marginBottom:12}}>⚙️ إعدادات الانتساب</div>
       <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:14,padding:12,marginBottom:16}}>
-        {[["registration_open","تفعيل التسجيل","السماح بتسجيل أعضاء جدد"],["auto_approve","الانتساب التلقائي","قبول الأعضاء الجدد بدون موافقة الإدارة"],["challenge_enabled","تفعيل تحدي الريمونتادا ⚔️","السماح بالتضحية بالنقاط: مطابقة تامة +التحدي، خطأ −التحدي (الحد 20 وبهامش نقاطه −3)"]].map(function(s){
+        {[["registration_open","تفعيل التسجيل","السماح بتسجيل أعضاء جدد"],["auto_approve","الانتساب التلقائي","قبول الأعضاء الجدد بدون موافقة الإدارة"],["challenge_enabled","تفعيل تحدي الريمونتادا ⚔️","السماح بالتضحية بالنقاط: مطابقة تامة +التحدي، خطأ −التحدي (حتى 40 نقطة، بلا قيود على الرصيد)"]].map(function(s){
           const on=appSettings&&appSettings[s[0]]==="true";
           return (
             <div key={s[0]} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:"1px solid "+C.border}}>
@@ -2307,10 +2306,9 @@ function MatchPopup({match,myPred,profiles,savePred,liveData,jokerUsed,chInfo,on
   const jAvail = jLimit - jUsedOther;            // متاح لهذه المباراة (بدون احتساب الزر المحلي)
   const jRemain = jAvail - (joker?1:0);          // المتبقي بعد اختيار هذه المباراة (يتغير حياً)
   const canJoker = jGrp && (joker || jAvail>0); // يقدر يفعّل لو فيه رصيد، أو يلغي المفعّل
-  /* التحدي (مفعّل من الإدارة فقط) — السيرفر هو الحكم النهائي للهامش */
+  /* التحدي (مفعّل من الإدارة فقط) — بلا شرط هامش، الحد الأقصى 40 */
   const chOn = Boolean(chInfo&&chInfo.on);
-  const chCur = (myPred&&myPred.challenge_points)||0;
-  const chAvail = chInfo ? Math.max(0, Math.min(20, chInfo.pts-3-(chInfo.pending-chCur))) : 0;
+  const CH_MAX = 40;
 
   const numBox=function(v,set){return (
     <input type="number" inputMode="numeric" min="0" max="20" value={v} onChange={function(e){set(clampScore(e.target.value));}} disabled={locked||finished||isPlaceholder}
@@ -2746,11 +2744,11 @@ function MatchPopup({match,myPred,profiles,savePred,liveData,jokerUsed,chInfo,on
                       <span style={{fontSize:22}}>⚔️</span>
                       <div>
                         <div style={{fontSize:13.5,fontWeight:800,color:chall!==""&&parseInt(chall,10)>0?C.red:C.text}}>تحدي الريمونتادا — ضحِّ بنقاطك</div>
-                        <div style={{fontSize:11.5,color:C.sub}}>مطابقة تامة +{chall!==""&&parseInt(chall,10)>0?chall:"التحدي"} · خطأ −{chall!==""&&parseInt(chall,10)>0?chall:"التحدي"} · فائز فقط بلا أثر · المتاح لك: {chAvail}</div>
+                        <div style={{fontSize:11.5,color:C.sub}}>مطابقة تامة +{chall!==""&&parseInt(chall,10)>0?chall:"التحدي"} · خطأ −{chall!==""&&parseInt(chall,10)>0?chall:"التحدي"} · فائز فقط بلا أثر · حتى {CH_MAX} نقطة</div>
                       </div>
                     </div>
-                    <input type="number" inputMode="numeric" min="0" max={chAvail} value={chall} placeholder="0"
-                      onChange={function(e){var v=e.target.value; if(v===""){setChall("");return;} var n=parseInt(v,10); if(isNaN(n)||n<0)n=0; if(n>Math.min(20,chAvail))n=Math.min(20,chAvail); setChall(String(n));}}
+                    <input type="number" inputMode="numeric" min="0" max={CH_MAX} value={chall} placeholder="0"
+                      onChange={function(e){var v=e.target.value; if(v===""){setChall("");return;} var n=parseInt(v,10); if(isNaN(n)||n<0)n=0; if(n>CH_MAX)n=CH_MAX; setChall(String(n));}}
                       style={{width:56,height:36,textAlign:"center",fontSize:16,fontWeight:900,background:"rgba(255,255,255,.09)",border:"1px solid "+(chall!==""&&parseInt(chall,10)>0?C.redBdr:C.border),borderRadius:9,color:C.text,fontFamily:"inherit",outline:"none",flexShrink:0}}/>
                   </div>
                 )}
