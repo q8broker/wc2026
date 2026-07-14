@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v37-20260710";
+const APP_VERSION = "v38-20260714";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -69,7 +69,10 @@ const fd = d => d.getDate()+" "+MN[d.getMonth()];
 const fw = d => WD[d.getDay()];
 const dk = d => d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
 const LD = s => new Date(s);
-const isLocked = u => new Date() >= new Date(u);
+const GRACE_MIN = 60; // نافذة السماح بعد الصافرة: التعديل مسموح حتى ساعة بعد بدء المباراة
+const isLocked = u => Date.now() >= new Date(u).getTime() + GRACE_MIN*60000; // الإغلاق النهائي = صافرة + ساعة
+const inGrace = u => { const k=new Date(u).getTime(); return Date.now()>=k && Date.now()<k+GRACE_MIN*60000; }; // بدأت لكن ضمن ساعة السماح
+const challengeCap = u => inGrace(u) ? 20 : 50; // سقف التحدي: 50 قبل الصافرة، 20 خلالها (السيرفر يفرضه فعلياً)
 const isPast = u => new Date() > new Date(u);
 const tzName = () => {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone.split("/").pop().replace(/_/g," "); }
@@ -1382,9 +1385,10 @@ function MatchRow({match,pred,savePred,live,onOpen,jokerUsed,chInfo}) {
   const jAvail=jLimit-jUsedOther;                 // متاح لهذه المباراة (بدون احتساب الزر المحلي)
   const jRemain=jAvail-(joker?1:0);               // المتبقي بعد اختيار هذه المباراة (يتغير حياً مع الزر)
   const canJoker=jGrp&&!finished&&!locked&&(joker||jAvail>0);
-  // التحدي (يظهر فقط عند تفعيل الميزة من الإدارة) — بلا شرط هامش، الحد الأقصى 40
+  // التحدي (يظهر فقط عند تفعيل الميزة من الإدارة) — بلا شرط هامش، السقف متدرّج (50 قبل الصافرة / 20 خلال ساعة السماح)
   const chOn = Boolean(chInfo&&chInfo.on)&&!finished&&!locked;
-  const CH_MAX = 40;
+  const CH_MAX = challengeCap(match.match_utc);
+  const chGrace = inGrace(match.match_utc);
 
   const lvShort=live&&live.status&&live.status.short;
   const lvNow=!finished&&isLiveShort(lvShort);
@@ -1452,6 +1456,9 @@ function MatchRow({match,pred,savePred,live,onOpen,jokerUsed,chInfo}) {
         </div>
       )}
       <div style={{marginTop:8,textAlign:"center",fontSize:11.5,color:C.blue,fontWeight:900}}>اضغط على البطاقة لفتح التفاصيل</div>
+      {!finished&&inGrace(match.match_utc)&&(
+        <div style={{marginTop:8,textAlign:"center",fontSize:11,fontWeight:800,color:C.red,background:C.redBg,border:"1px solid "+C.redBdr,borderRadius:8,padding:"5px 8px"}}>⏱️ المباراة انطلقت — يمكنك التعديل حتى ساعة من الصافرة (التحدي حتى ٢٠)</div>
+      )}
       {jGrp&&!finished&&!locked&&(
         <div onClick={function(e){e.stopPropagation(); if(canJoker) setJoker(!joker);}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:joker?C.goldBg:"rgba(255,255,255,.04)",border:"1px solid "+(joker?C.goldBdr:C.border),borderRadius:10,padding:"7px 10px",marginTop:9,cursor:canJoker?"pointer":"not-allowed",opacity:canJoker?1:0.55}}>
           <span style={{fontSize:11.5,fontWeight:800,color:joker?C.gold:C.sub}}>{"🃏 جوكر (نقاط ×2) · متبقٍ "+jRemain}</span>
@@ -1462,7 +1469,7 @@ function MatchRow({match,pred,savePred,live,onOpen,jokerUsed,chInfo}) {
       )}
       {chOn&&(
         <div onClick={function(e){e.stopPropagation();}} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,background:chall!==""&&parseInt(chall,10)>0?"rgba(240,80,80,.08)":"rgba(255,255,255,.04)",border:"1px solid "+(chall!==""&&parseInt(chall,10)>0?C.redBdr:C.border),borderRadius:10,padding:"7px 10px",marginTop:8}}>
-          <span style={{fontSize:11.5,fontWeight:800,color:chall!==""&&parseInt(chall,10)>0?C.red:C.sub}}>{"⚔️ تحدي الريمونتادا · حتى "+CH_MAX}</span>
+          <span style={{fontSize:11.5,fontWeight:800,color:chall!==""&&parseInt(chall,10)>0?C.red:C.sub}}>{"⚔️ تحدي الريمونتادا · حتى "+CH_MAX+(chGrace?" (بعد الصافرة)":"")}</span>
           <input type="number" inputMode="numeric" min="0" max={CH_MAX} value={chall} placeholder="0"
             onChange={function(e){var v=e.target.value; if(v===""){setChall("");return;} var n=parseInt(v,10); if(isNaN(n)||n<0)n=0; if(n>CH_MAX)n=CH_MAX; setChall(String(n));}}
             onClick={function(e){e.stopPropagation();}}
@@ -2086,7 +2093,7 @@ function AdminTab({pending,matches,teams,approveUser,setResult,champWin,setChamp
 
       <div style={{fontSize:14,fontWeight:700,color:C.gold,marginBottom:12}}>⚙️ إعدادات الانتساب</div>
       <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:14,padding:12,marginBottom:16}}>
-        {[["registration_open","تفعيل التسجيل","السماح بتسجيل أعضاء جدد"],["auto_approve","الانتساب التلقائي","قبول الأعضاء الجدد بدون موافقة الإدارة"],["challenge_enabled","تفعيل تحدي الريمونتادا ⚔️","السماح بالتضحية بالنقاط: مطابقة تامة +التحدي، خطأ −التحدي (حتى 40 نقطة، بلا قيود على الرصيد)"]].map(function(s){
+        {[["registration_open","تفعيل التسجيل","السماح بتسجيل أعضاء جدد"],["auto_approve","الانتساب التلقائي","قبول الأعضاء الجدد بدون موافقة الإدارة"],["challenge_enabled","تفعيل تحدي الريمونتادا ⚔️","التضحية بالنقاط: مطابقة تامة +التحدي، خطأ −التحدي (حتى 50 قبل الصافرة و20 خلال ساعة السماح، بلا قيود على الرصيد)"]].map(function(s){
           const on=appSettings&&appSettings[s[0]]==="true";
           return (
             <div key={s[0]} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:"1px solid "+C.border}}>
@@ -2306,9 +2313,10 @@ function MatchPopup({match,myPred,profiles,savePred,liveData,jokerUsed,chInfo,on
   const jAvail = jLimit - jUsedOther;            // متاح لهذه المباراة (بدون احتساب الزر المحلي)
   const jRemain = jAvail - (joker?1:0);          // المتبقي بعد اختيار هذه المباراة (يتغير حياً)
   const canJoker = jGrp && (joker || jAvail>0); // يقدر يفعّل لو فيه رصيد، أو يلغي المفعّل
-  /* التحدي (مفعّل من الإدارة فقط) — بلا شرط هامش، الحد الأقصى 40 */
+  /* التحدي (مفعّل من الإدارة فقط) — بلا شرط هامش، السقف متدرّج (50 قبل الصافرة / 20 خلال ساعة السماح) */
   const chOn = Boolean(chInfo&&chInfo.on);
-  const CH_MAX = 40;
+  const CH_MAX = valid?challengeCap(match.match_utc):50;
+  const chGrace = valid&&inGrace(match.match_utc);
 
   const numBox=function(v,set){return (
     <input type="number" inputMode="numeric" min="0" max="20" value={v} onChange={function(e){set(clampScore(e.target.value));}} disabled={locked||finished||isPlaceholder}
@@ -2718,7 +2726,9 @@ function MatchPopup({match,myPred,profiles,savePred,liveData,jokerUsed,chInfo,on
               </div>
             :(
               <div>
-                <div style={{textAlign:"center",marginBottom:16,fontSize:13.5,color:C.sub}}>توقّع النتيجة قبل الصافرة</div>
+                {chGrace
+                  ? <div style={{textAlign:"center",marginBottom:16,fontSize:12.5,fontWeight:800,color:C.red,background:C.redBg,border:"1px solid "+C.redBdr,borderRadius:10,padding:"8px 10px"}}>⏱️ المباراة انطلقت — التعديل مفتوح حتى ساعة من الصافرة (التحدي حتى ٢٠ نقطة)</div>
+                  : <div style={{textAlign:"center",marginBottom:16,fontSize:13.5,color:C.sub}}>توقّع النتيجة قبل الصافرة</div>}
                 <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,marginBottom:14}}>
                   <div style={{textAlign:"center"}}><div style={{marginBottom:6,display:"flex",justifyContent:"center"}}><TeamFlag team={match.team1} size={26}/></div>{numBox(p1,setP1)}</div>
                   <span style={{fontSize:18,color:C.dim}}>-</span>
@@ -2744,7 +2754,7 @@ function MatchPopup({match,myPred,profiles,savePred,liveData,jokerUsed,chInfo,on
                       <span style={{fontSize:22}}>⚔️</span>
                       <div>
                         <div style={{fontSize:13.5,fontWeight:800,color:chall!==""&&parseInt(chall,10)>0?C.red:C.text}}>تحدي الريمونتادا — ضحِّ بنقاطك</div>
-                        <div style={{fontSize:11.5,color:C.sub}}>مطابقة تامة +{chall!==""&&parseInt(chall,10)>0?chall:"التحدي"} · خطأ −{chall!==""&&parseInt(chall,10)>0?chall:"التحدي"} · فائز فقط بلا أثر · حتى {CH_MAX} نقطة</div>
+                        <div style={{fontSize:11.5,color:C.sub}}>مطابقة تامة +{chall!==""&&parseInt(chall,10)>0?chall:"التحدي"} · خطأ −{chall!==""&&parseInt(chall,10)>0?chall:"التحدي"} · فائز فقط بلا أثر · حتى {CH_MAX} نقطة{chGrace?" (بعد الصافرة)":""}</div>
                       </div>
                     </div>
                     <input type="number" inputMode="numeric" min="0" max={CH_MAX} value={chall} placeholder="0"
