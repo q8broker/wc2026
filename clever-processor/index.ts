@@ -110,10 +110,12 @@ async function claimSync(key: string, field: string, minutes: number, fallbackLa
   }
 }
 
-/* هل توجد مباراة الآن أو على وشك البدء؟ (نافذة: 30 دقيقة قبل → 160 دقيقة بعد الانطلاق) */
+/* هل توجد مباراة الآن أو على وشك البدء؟ (نافذة: 30 دقيقة قبل → 300 دقيقة بعد الانطلاق)
+   الطرف البعيد واسع ليغطي المباريات الطويلة (فقرة بين الشوطين + وقت إضافي + ترجيح)
+   فيبقى التحديث المباشر شغّالاً حتى نهايتها الفعلية. */
 async function hasMatchWindow() {
   const now = Date.now();
-  const from = new Date(now - 160 * 60_000).toISOString();
+  const from = new Date(now - 300 * 60_000).toISOString();
   const to = new Date(now + 30 * 60_000).toISOString();
   const { count, error } = await supabase
     .from("matches")
@@ -1190,17 +1192,21 @@ async function cronTick() {
   // (2) مباريات البطولة المرتبطة
   const { data: rows } = await supabase
     .from("football_fixture_cache")
-    .select("api_fixture_id,kickoff_at,status_short,home_name,away_name,home_team_id,away_team_id")
+    .select("api_fixture_id,kickoff_at,status_short,home_name,away_name,home_team_id,away_team_id,score")
     .gte("kickoff_at", `${tournamentStart}T00:00:00Z`)
     .lte("kickoff_at", `${tournamentEnd}T23:59:59Z`)
     .eq("season", season);
   if (!rows?.length) return { ticked: true, candidates: 0 };
 
+  // (2ب) اعتماد النتائج آلياً من الكرون — لا ننتظر أن يفتح أحد التطبيق.
+  // مهم للمباريات التي تنتهي متأخراً (تمديد/ترجيح/فقرة بين الشوطين).
+  await autoApplyResults(rows).catch(() => null);
+
   const now = Date.now();
-  // النوافذ الزمنية (كلها مغلقة — بعد انقضائها لا يُلمس شيء، فلا محاولات لا نهائية):
-  //  • التشكيلة: حول البداية (±10د) أو بعد النهاية [95,135]
-  //  • الإحصائيات/الأحداث: بعد الشوط الأول [55,72] + بعد النهاية [95,135]
-  //  • التقييمات: بعد النهاية فقط [95,135]
+  // النوافذ الزمنية (كلها مغلقة — بعد انقضائها لا يُلمس شيء، فلا محاولات لا نهائية).
+  // النوافذ بعد النهاية واسعة عمداً: المباراة قد تطول (فقرة فنية بين الشوطين + وقت إضافي
+  // + ركلات ترجيح) فتأتي FT متأخرة كثيراً عن الـ95 دقيقة المعتادة. الحدّ الفعلي على
+  // الاستهلاك هو claimSync (18/30د) + شرط «أُنجز بعد النهاية»، لا ضيق النافذة.
   const win = (r: AnyRow) => {
     const ko = r.kickoff_at ? new Date(r.kickoff_at).getTime() : null;
     if (ko == null) return null;
@@ -1208,12 +1214,12 @@ async function cronTick() {
     const isFT = r.status_short === "FT";
     return {
       ko, mins, isFT,
-      // التشكيلة: حول البداية أو بعد النهاية بقليل
-      lineup: (mins >= -10 && mins <= 10) || (isFT && mins >= 95 && mins <= 135),
+      // التشكيلة: حول البداية أو بعد النهاية (متى ما جاءت)
+      lineup: (mins >= -10 && mins <= 10) || (isFT && mins >= 95 && mins <= 330),
       halftime: mins >= 55 && mins <= 72,                  // بعد الشوط الأول
-      statsFT: isFT && mins >= 95 && mins <= 170,           // بعد النهاية (الإحصائيات/التقييمات تتوفر بسرعة)
-      // الأحداث قد ينشرها المصدر متأخراً — نافذة أوسع بسقف صارم على المحاولات
-      eventsFT: isFT && mins >= 95 && mins <= 300,
+      statsFT: isFT && mins >= 95 && mins <= 330,           // بعد النهاية (الإحصائيات/التقييمات)
+      // الأحداث قد ينشرها المصدر متأخراً — أوسع نافذة
+      eventsFT: isFT && mins >= 95 && mins <= 390,
     };
   };
   const candidates = rows.filter((r: AnyRow) => { const w = win(r); return w && (w.lineup || w.halftime || w.statsFT || w.eventsFT); });
