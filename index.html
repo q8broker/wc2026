@@ -45,7 +45,7 @@ html,body{background:#020b1c;font-family:"Tajawal",sans-serif;direction:rtl;colo
 <script type="text/babel">
 /* eslint-disable */
 const {useState,useEffect,useMemo} = React;
-const APP_VERSION = "v38-20260714";
+const APP_VERSION = "v39-20260716";
 const sb = window.supabase.createClient(
   "https://aajncwbilknfjuzvrjxl.supabase.co",
   "sb_publishable_hy2gQ1umJfS9SHlEklnHLw_SifxEDQs"
@@ -805,7 +805,7 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
     try {
       // النقاط محسوبة في السيرفر عبر دالة leaderboard() — نعيد تشكيلها فقط
       return (board||[]).map(function(r){
-        return {id:r.user_id, display_name:r.display_name, username:r.username, pts:r.points||0, predCount:r.pred_count||0};
+        return {id:r.user_id, display_name:r.display_name, username:r.username, pts:r.points||0, ptsNc:r.points_nc!=null?r.points_nc:(r.points||0), predCount:r.pred_count||0};
       }).sort(function(a,b){return b.pts-a.pts;});
     } catch(e){ return []; }
   }, [board]);
@@ -983,7 +983,7 @@ function MainApp({profile,setProfile,tab,setTab,signOut}) {
         {tab==="grps"  && <GroupsTab matches={matches} teams={teams} favs={favs} toggleFav={toggleFav} myChamp={myChamp} saveChampion={saveChampion} champLock={champLock} liveMap={liveMap} onTeamMatches={function(id){setTeamMatchFilter(id);setMatchFlt("all");setTab("match");}}/>}
         {tab==="match" && <MatchesTab matches={matches} myPreds={myPreds} savePred={savePred} matchFlt={matchFlt} setMatchFlt={setMatchFlt} teamFilter={teamMatchFilter} setTeamFilter={setTeamMatchFilter} liveMap={liveMap} jokerUsed={jokerUsed} chInfo={chInfo} onOpen={setPopup}/>}
         {tab==="knock" && <KnockTab matches={matches.filter(function(m){return m.stage&&m.stage!=="group";})} allMatches={matches} teams={teams} myPreds={myPreds} liveMap={liveMap} savePred={savePred} jokerUsed={jokerUsed} chInfo={chInfo} onOpen={setPopup}/>}
-        {tab==="board" && <BoardTab leaderboard={leaderboard} profile={profile} matches={matches} teams={teams} allChamp={allChamp} champLock={champLock}/>}
+        {tab==="board" && <BoardTab leaderboard={leaderboard} profile={profile} matches={matches} teams={teams} allChamp={allChamp} champLock={champLock} ncToggleOn={appSettings&&appSettings["board_nc_toggle"]==="true"}/>}
         {tab==="me"    && <ProfileTab profile={profile} setProfile={setProfile} myPts={myPts} predCount={Object.keys(myPreds).length} favCount={favs.size} myChamp={myChamp} teams={teams}/>}
         {tab==="admin" && <AdminTab pending={pending} matches={matches} teams={teams} approveUser={approveUser} setResult={setResult} champWin={champWin} setChampWinner={setChampWinner} syncAPI={syncAPI} pullResults={pullResults} applyResults={applyResults} appSettings={appSettings} toggleSetting={toggleSetting} members={profiles}/>}
         </Boundary>
@@ -1797,9 +1797,16 @@ function KnockTab({matches,allMatches,teams,myPreds,liveMap,savePred,jokerUsed,c
 }
 
 /* ═══════════════ LEADERBOARD ══════════════════════════════════ */
-function BoardTab({leaderboard,profile,matches,teams,allChamp,champLock}) {
+function BoardTab({leaderboard,profile,matches,teams,allChamp,champLock,ncToggleOn}) {
   const medals=["🥇","🥈","🥉"];
   const [sel,setSel] = useState(null);
+  /* عرض الترتيب: بنقاط الريمونتادا (الرسمي) أو بدونها (يظهر الخيار فقط عند تفعيله من الإدارة) */
+  const [ncMode,setNcMode] = useState(false);
+  const showNc = Boolean(ncToggleOn);
+  const rows = useMemo(function(){
+    if(!(showNc&&ncMode)) return leaderboard;
+    return leaderboard.slice().sort(function(a,b){return b.ptsNc-a.ptsNc;});
+  },[leaderboard,showNc,ncMode]);
   /* توقعات البطل تُكشف للجميع بعد انطلاق دور الـ16 (السرية قبلها مفروضة من السيرفر عبر RLS) */
   const champRevealed = champLock && new Date()>=champLock;
   const champByUser = {};
@@ -1822,8 +1829,21 @@ function BoardTab({leaderboard,profile,matches,teams,allChamp,champLock}) {
   return (
     <div>
       <div style={{fontSize:15,fontWeight:700,marginBottom:14,textAlign:"center",color:C.gold}}>🏆 جدول الترتيب · نقاط لحظية</div>
-      {leaderboard.length===0 && <div style={{textAlign:"center",padding:40,color:C.sub}}>لا يوجد مشاركون بعد</div>}
-      {leaderboard.map(function(u,i){
+      {showNc&&(
+        <div style={{display:"flex",gap:8,marginBottom:14,background:C.card,border:"1px solid "+C.border,borderRadius:14,padding:5}}>
+          {[[false,"⚔️ بالريمونتادا"],[true,"بدون الريمونتادا"]].map(function(x){
+            const on=ncMode===x[0];
+            return (
+              <button key={String(x[0])} onClick={function(){setNcMode(x[0]);}} style={{flex:1,padding:"8px 6px",borderRadius:10,border:"1px solid "+(on?C.goldBdr:"transparent"),background:on?C.goldBg:"transparent",color:on?C.gold:C.sub,fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+                {x[1]}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {showNc&&ncMode&&<div style={{textAlign:"center",fontSize:11.5,color:C.dim,marginBottom:10}}>عرض تجريبي بدون نقاط التحدي — الترتيب الرسمي هو «بالريمونتادا»</div>}
+      {rows.length===0 && <div style={{textAlign:"center",padding:40,color:C.sub}}>لا يوجد مشاركون بعد</div>}
+      {rows.map(function(u,i){
         const me=u.id===profile.id;
         const clr=i===0?C.gold:i===1?"#c0c0c0":i===2?"#cd7f32":C.text;
         return (
@@ -1846,8 +1866,8 @@ function BoardTab({leaderboard,profile,matches,teams,allChamp,champLock}) {
               )}
             </div>
             <div style={{textAlign:"left"}}>
-              <div style={{fontSize:22,fontWeight:900,color:clr}}>{u.pts}</div>
-              <div style={{fontSize:11.5,color:C.sub}}>نقطة</div>
+              <div style={{fontSize:22,fontWeight:900,color:clr}}>{showNc&&ncMode?u.ptsNc:u.pts}</div>
+              <div style={{fontSize:11.5,color:C.sub}}>{showNc&&ncMode?"بدون ⚔️":"نقطة"}</div>
             </div>
           </div>
         );
@@ -2093,7 +2113,7 @@ function AdminTab({pending,matches,teams,approveUser,setResult,champWin,setChamp
 
       <div style={{fontSize:14,fontWeight:700,color:C.gold,marginBottom:12}}>⚙️ إعدادات الانتساب</div>
       <div style={{background:C.card,border:"1px solid "+C.border,borderRadius:14,padding:12,marginBottom:16}}>
-        {[["registration_open","تفعيل التسجيل","السماح بتسجيل أعضاء جدد"],["auto_approve","الانتساب التلقائي","قبول الأعضاء الجدد بدون موافقة الإدارة"],["challenge_enabled","تفعيل تحدي الريمونتادا ⚔️","التضحية بالنقاط: مطابقة تامة +التحدي، خطأ −التحدي (حتى 50 قبل الصافرة و20 خلال ساعة السماح، بلا قيود على الرصيد)"]].map(function(s){
+        {[["registration_open","تفعيل التسجيل","السماح بتسجيل أعضاء جدد"],["auto_approve","الانتساب التلقائي","قبول الأعضاء الجدد بدون موافقة الإدارة"],["challenge_enabled","تفعيل تحدي الريمونتادا ⚔️","التضحية بالنقاط: مطابقة تامة +التحدي، خطأ −التحدي (حتى 50 قبل الصافرة و20 خلال ساعة السماح، بلا قيود على الرصيد)"],["board_nc_toggle","خيار الترتيب بدون الريمونتادا","إظهار مفتاح فوق جدول الترتيب للتبديل بين الترتيب بنقاط الريمونتادا أو بدونها"]].map(function(s){
           const on=appSettings&&appSettings[s[0]]==="true";
           return (
             <div key={s[0]} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:"1px solid "+C.border}}>
